@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>xyz.tcheeric</groupId>
+        <artifactId>cashu-ledger</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>cashu-ledger-core</artifactId>
+    <packaging>jar</packaging>
+    <name>Cashu Ledger Core</name>
+    <description>Core domain and services for the cashu-ledger CLI</description>
+
+    <dependencies>
+        <!-- Nostr relay connectivity -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>nostr-java-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>nostr-java-event</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>nostr-java-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>nostr-java-base</artifactId>
+        </dependency>
+
+        <!-- Voucher domain helpers -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-voucher-domain</artifactId>
+        </dependency>
+
+        <!-- Logging -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+
+        <!-- JSON parsing for relay responses -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
