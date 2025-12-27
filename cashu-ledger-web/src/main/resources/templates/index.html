@@ -134,7 +134,8 @@
 </div>
 
 <script>
-    let apiBase = localStorage.getItem('cashu-ledger-api-base') || document.body.dataset.apiBase || '';
+    const defaultApiBase = document.body.dataset.apiBase || '/proxy';
+    let apiBase = localStorage.getItem('cashu-ledger-api-base') || defaultApiBase;
 
     const api = (path) => {
         if (!apiBase) {
@@ -143,13 +144,41 @@
         return apiBase.replace(/\/$/, '') + path;
     };
 
+    const apiInput = document.getElementById('api-base');
+    const apiStatus = document.getElementById('api-status');
+    const apiSave = document.getElementById('api-save');
+
+    const setBase = (value, transientMessage) => {
+        apiBase = value && value.trim() ? value.trim() : defaultApiBase;
+        localStorage.setItem('cashu-ledger-api-base', apiBase);
+        if (apiInput) {
+            apiInput.value = apiBase;
+        }
+        if (apiStatus) {
+            apiStatus.textContent = transientMessage || `Using ${apiBase}`;
+            setTimeout(() => apiStatus.textContent = '', 2000);
+        }
+    };
+
+    const request = async (path) => {
+        try {
+            return await fetch(api(path));
+        } catch (e) {
+            if (apiBase !== '/proxy') {
+                setBase('/proxy', 'Falling back to /proxy due to network/CORS');
+                return fetch(api(path));
+            }
+            throw e;
+        }
+    };
+
     async function inspect() {
         const id = document.getElementById('inspect-id').value.trim();
         const out = document.getElementById('inspect-out');
         if (!id) return;
         out.textContent = 'Loading...';
         try {
-            const res = await fetch(api(`/vouchers/${encodeURIComponent(id)}`));
+            const res = await request(`/vouchers/${encodeURIComponent(id)}`);
             out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : `Not found (status ${res.status})`;
         } catch (e) {
             out.textContent = `Request failed: ${e}`;
@@ -166,7 +195,7 @@
         if (status) params.append('status', status);
         if (unclaimed) params.append('unclaimed', 'true');
         try {
-            const res = await fetch(api(`/vouchers?${params.toString()}`));
+            const res = await request(`/vouchers?${params.toString()}`);
             out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : `Error (status ${res.status})`;
         } catch (e) {
             out.textContent = `Request failed: ${e}`;
@@ -178,7 +207,7 @@
         if (!id) return;
         out.textContent = 'Loading...';
         try {
-            const res = await fetch(api(`/vouchers/${encodeURIComponent(id)}/history`));
+            const res = await request(`/vouchers/${encodeURIComponent(id)}/history`);
             out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : `Not found (status ${res.status})`;
         } catch (e) {
             out.textContent = `Request failed: ${e}`;
@@ -190,7 +219,7 @@
         if (!id) return;
         out.textContent = 'Loading...';
         try {
-            const res = await fetch(api(`/vouchers/${encodeURIComponent(id)}/verify`));
+            const res = await request(`/vouchers/${encodeURIComponent(id)}/verify`);
             out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : `Not found (status ${res.status})`;
         } catch (e) {
             out.textContent = `Request failed: ${e}`;
@@ -203,7 +232,7 @@
         if (!left || !right) return;
         out.textContent = 'Loading...';
         try {
-            const res = await fetch(api(`/vouchers/${encodeURIComponent(left)}/diff/${encodeURIComponent(right)}`));
+            const res = await request(`/vouchers/${encodeURIComponent(left)}/diff/${encodeURIComponent(right)}`);
             out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : `Not found (status ${res.status})`;
         } catch (e) {
             out.textContent = `Request failed: ${e}`;
@@ -215,13 +244,18 @@
         if (!id) return;
         out.textContent = 'Starting...';
         try {
-            const source = new EventSource(api(`/watch/${encodeURIComponent(id)}`));
+            let source = new EventSource(api(`/watch/${encodeURIComponent(id)}`));
             source.onmessage = (evt) => {
                 out.textContent += `${evt.data}\n`;
             };
             source.onerror = () => {
                 out.textContent += 'Stream closed\n';
                 source.close();
+                if (apiBase !== '/proxy') {
+                    setBase('/proxy', 'Falling back to /proxy for SSE');
+                    source = new EventSource(api(`/watch/${encodeURIComponent(id)}`));
+                    source.onmessage = (evt) => out.textContent += `${evt.data}\n`;
+                }
             };
         } catch (e) {
             out.textContent = `Request failed: ${e}`;
@@ -273,16 +307,10 @@
         sidebar.classList.toggle('open');
     });
 
-    const apiInput = document.getElementById('api-base');
-    const apiStatus = document.getElementById('api-status');
-    const apiSave = document.getElementById('api-save');
     apiInput.value = apiBase;
     apiStatus.textContent = apiBase ? `Using ${apiBase}` : 'Using relative /api/v1';
     apiSave.addEventListener('click', () => {
-        apiBase = apiInput.value.trim();
-        localStorage.setItem('cashu-ledger-api-base', apiBase);
-        apiStatus.textContent = apiBase ? `Using ${apiBase}` : 'Using relative /api/v1';
-        setTimeout(() => apiStatus.textContent = '', 2000);
+        setBase(apiInput.value);
     });
 </script>
 </body>
