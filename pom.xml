@@ -28,7 +28,7 @@
         <picocli.version>4.7.6</picocli.version>
         <slf4j.version>2.0.17</slf4j.version>
         <logback.version>1.5.18</logback.version>
-        <jackson.version>2.20.0</jackson.version>
+        <!-- Jackson version managed by Spring Boot BOM -->
         <lombok.version>1.18.40</lombok.version>
         <maven.shade.plugin.version>3.6.0</maven.shade.plugin.version>
         <spring.boot.version>3.3.4</spring.boot.version>
@@ -109,11 +109,7 @@
                 <artifactId>logback-classic</artifactId>
                 <version>${logback.version}</version>
             </dependency>
-            <dependency>
-                <groupId>com.fasterxml.jackson.core</groupId>
-                <artifactId>jackson-databind</artifactId>
-                <version>${jackson.version}</version>
-            </dependency>
+            <!-- jackson-databind version managed by Spring Boot BOM -->
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>
