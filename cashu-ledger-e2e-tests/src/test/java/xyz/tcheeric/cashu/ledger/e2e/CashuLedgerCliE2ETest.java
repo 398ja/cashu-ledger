@@ -6,6 +6,7 @@ import xyz.tcheeric.cashu.ledger.cli.CashuLedgerCommand;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -27,5 +28,17 @@ class CashuLedgerCliE2ETest {
         } finally {
             System.setOut(originalOut);
         }
+    }
+
+    @Test
+    void shouldExposeHelpForAllSubcommands() {
+        List<String> commands = List.of("inspect", "search", "history", "export", "unclaimed", "verify", "diff", "watch", "tree");
+        CommandLine root = new CommandLine(new CashuLedgerCommand());
+        commands.forEach(cmd -> {
+            CommandLine sub = root.getSubcommands().get(cmd);
+            assertThat(sub).as("subcommand " + cmd + " should exist").isNotNull();
+            String usage = sub.getUsageMessage();
+            assertThat(usage).contains(cmd);
+        });
     }
 }
