@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cashu Ledger Web</title>
+    <style>
+        :root { --bg:#0f172a; --card:#111827; --accent:#34d399; --text:#e5e7eb; --muted:#9ca3af; --border:#1f2937; }
+        * { box-sizing: border-box; }
+        body { margin:0; font-family: "Inter", system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+        h1 { margin: 0 0 16px 0; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+        label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 12px; letter-spacing: .3px; text-transform: uppercase; }
+        input, select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: #0b1220; color: var(--text); }
+        button { margin-top: 8px; padding: 10px 12px; border: none; border-radius: 8px; background: var(--accent); color: #0b1220; font-weight: 600; cursor: pointer; }
+        pre { background: #0b1220; border: 1px solid var(--border); padding: 12px; border-radius: 8px; overflow: auto; max-height: 320px; }
+        .row { display: flex; gap: 8px; }
+        .toggle { display:inline-flex; gap:4px; align-items:center; cursor:pointer; color:var(--muted); }
+    </style>
+</head>
+<body>
+<h1>Cashu Ledger <label class="toggle"><input type="checkbox" id="theme-toggle"> Light mode</label></h1>
+<div class="grid">
+    <div class="card">
+        <h3>Inspect</h3>
+        <label for="inspect-id">Voucher ID</label>
+        <input id="inspect-id" placeholder="v-123...">
+        <button onclick="inspect()">Inspect</button>
+        <pre id="inspect-out"></pre>
+    </div>
+    <div class="card">
+        <h3>Search</h3>
+        <label for="search-issuer">Issuer</label>
+        <input id="search-issuer" placeholder="merchant-001">
+        <label for="search-status">Status</label>
+        <select id="search-status">
+            <option value="">Any</option>
+            <option>issued</option>
+            <option>claimed</option>
+            <option>split</option>
+            <option>redeemed</option>
+            <option>reclaimed</option>
+        </select>
+        <label><input type="checkbox" id="search-unclaimed"> Unclaimed only</label>
+        <button onclick="search()">Search</button>
+        <pre id="search-out"></pre>
+    </div>
+    <div class="card">
+        <h3>History</h3>
+        <label for="history-id">Voucher ID</label>
+        <input id="history-id" placeholder="v-123...">
+        <button onclick="history()">History</button>
+        <pre id="history-out"></pre>
+    </div>
+    <div class="card">
+        <h3>Verify</h3>
+        <label for="verify-id">Voucher ID</label>
+        <input id="verify-id" placeholder="v-123...">
+        <button onclick="verify()">Verify</button>
+        <pre id="verify-out"></pre>
+    </div>
+</div>
+
+<script>
+    async function inspect() {
+        const id = document.getElementById('inspect-id').value;
+        const out = document.getElementById('inspect-out');
+        out.textContent = 'Loading...';
+        const res = await fetch(`/api/v1/vouchers/${encodeURIComponent(id)}`);
+        out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : 'Not found';
+    }
+    async function search() {
+        const issuer = document.getElementById('search-issuer').value;
+        const status = document.getElementById('search-status').value;
+        const unclaimed = document.getElementById('search-unclaimed').checked;
+        const out = document.getElementById('search-out');
+        out.textContent = 'Loading...';
+        const params = new URLSearchParams();
+        if (issuer) params.append('issuer', issuer);
+        if (status) params.append('status', status);
+        if (unclaimed) params.append('unclaimed', 'true');
+        const res = await fetch(`/api/v1/vouchers?${params.toString()}`);
+        out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : 'Error';
+    }
+    async function history() {
+        const id = document.getElementById('history-id').value;
+        const out = document.getElementById('history-out');
+        out.textContent = 'Loading...';
+        const res = await fetch(`/api/v1/vouchers/${encodeURIComponent(id)}/history`);
+        out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : 'Not found';
+    }
+    async function verify() {
+        const id = document.getElementById('verify-id').value;
+        const out = document.getElementById('verify-out');
+        out.textContent = 'Loading...';
+        const res = await fetch(`/api/v1/vouchers/${encodeURIComponent(id)}/verify`);
+        out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : 'Not found';
+    }
+</script>
+<script>
+    const toggle = document.getElementById('theme-toggle');
+    toggle.addEventListener('change', () => {
+        if (toggle.checked) {
+            document.documentElement.style.setProperty('--bg', '#f8fafc');
+            document.documentElement.style.setProperty('--card', '#ffffff');
+            document.documentElement.style.setProperty('--text', '#0f172a');
+            document.documentElement.style.setProperty('--muted', '#64748b');
+            document.documentElement.style.setProperty('--border', '#e2e8f0');
+        } else {
+            document.documentElement.style.setProperty('--bg', '#0f172a');
+            document.documentElement.style.setProperty('--card', '#111827');
+            document.documentElement.style.setProperty('--text', '#e5e7eb');
+            document.documentElement.style.setProperty('--muted', '#9ca3af');
+            document.documentElement.style.setProperty('--border', '#1f2937');
+        }
+    });
+</script>
+</body>
+</html>

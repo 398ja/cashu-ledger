@@ -105,6 +105,51 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
     }
 
     @Override
+    public List<RelayEvent> fetchVoucherEvents(String voucherId, int limit) {
+        Objects.requireNonNull(voucherId, "voucherId");
+        int effectiveLimit = Math.max(1, limit);
+        List<RelayEvent> results = new ArrayList<>();
+        Set<String> seenIds = new HashSet<>();
+
+        for (String relayUrl : relayUrls) {
+            ClientContext context = clients.computeIfAbsent(relayUrl, this::createClient);
+            try {
+                queryVoucherEventsForRelay(context.client(), relayUrl, voucherId, effectiveLimit)
+                        .forEach(event -> {
+                            if (event.event().getId() != null && seenIds.add(event.event().getId())) {
+                                results.add(event);
+                            }
+                        });
+            } catch (Exception e) {
+                log.warn("relay_history_query_failed relay={} voucherId={} error={}", relayUrl, voucherId, e.getMessage());
+            }
+        }
+        return results;
+    }
+
+    @Override
+    public List<RelayEvent> searchVouchers(int limit) {
+        int effectiveLimit = Math.max(1, limit);
+        List<RelayEvent> results = new ArrayList<>();
+        Set<String> seenIds = new HashSet<>();
+
+        for (String relayUrl : relayUrls) {
+            ClientContext context = clients.computeIfAbsent(relayUrl, this::createClient);
+            try {
+                queryAllVouchersForRelay(context.client(), relayUrl, effectiveLimit)
+                        .forEach(event -> {
+                            if (event.event().getId() != null && seenIds.add(event.event().getId())) {
+                                results.add(event);
+                            }
+                        });
+            } catch (Exception e) {
+                log.warn("relay_search_query_failed relay={} error={}", relayUrl, e.getMessage());
+            }
+        }
+        return results;
+    }
+
+    @Override
     public void disconnect() {
         clients.values().forEach(ClientContext::close);
         clients.clear();
@@ -172,6 +217,76 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         return found;
     }
 
+    private List<RelayEvent> queryVoucherEventsForRelay(
+            SpringWebSocketClient client,
+            String relayUrl,
+            String voucherId,
+            int limit
+    ) throws InterruptedException, IOException {
+        String subscriptionId = "hist-" + UUID.randomUUID().toString().substring(0, 8);
+        CountDownLatch eoseLatch = new CountDownLatch(1);
+        List<RelayEvent> found = new ArrayList<>();
+
+        Filters filters = buildFilters(voucherId);
+        filters.setLimit(limit);
+        ReqMessage reqMessage = new ReqMessage(subscriptionId, List.of(filters));
+
+        client.subscribe(
+                reqMessage,
+                message -> {
+                    GenericEvent event = parseEventFromJson(message);
+                    if (event != null) {
+                        found.add(new RelayEvent(event, relayUrl));
+                    } else if (message.contains("\"EOSE\"")) {
+                        eoseLatch.countDown();
+                    }
+                },
+                error -> {
+                    log.warn("relay_history_query_error relay={} subscription={} error={}", relayUrl, subscriptionId, error.getMessage());
+                    eoseLatch.countDown();
+                },
+                eoseLatch::countDown
+        );
+
+        eoseLatch.await(queryTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        client.send(new CloseMessage(subscriptionId));
+        return found;
+    }
+
+    private List<RelayEvent> queryAllVouchersForRelay(
+            SpringWebSocketClient client,
+            String relayUrl,
+            int limit
+    ) throws InterruptedException, IOException {
+        String subscriptionId = "search-" + UUID.randomUUID().toString().substring(0, 8);
+        CountDownLatch eoseLatch = new CountDownLatch(1);
+        List<RelayEvent> found = new ArrayList<>();
+
+        Filters filters = buildKindOnlyFilters(limit);
+        ReqMessage reqMessage = new ReqMessage(subscriptionId, List.of(filters));
+
+        client.subscribe(
+                reqMessage,
+                message -> {
+                    GenericEvent event = parseEventFromJson(message);
+                    if (event != null) {
+                        found.add(new RelayEvent(event, relayUrl));
+                    } else if (message.contains("\"EOSE\"")) {
+                        eoseLatch.countDown();
+                    }
+                },
+                error -> {
+                    log.warn("relay_search_query_error relay={} subscription={} error={}", relayUrl, subscriptionId, error.getMessage());
+                    eoseLatch.countDown();
+                },
+                eoseLatch::countDown
+        );
+
+        eoseLatch.await(queryTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        client.send(new CloseMessage(subscriptionId));
+        return found;
+    }
+
     private void handleMessage(String message, AtomicReference<GenericEvent> found, CountDownLatch eoseLatch) {
         if (message.contains("\"EVENT\"")) {
             GenericEvent event = parseEventFromJson(message);
@@ -193,6 +308,14 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
     }
 
     private Filters buildChildFilters(int limit) {
+        List<Filterable> filterables = new ArrayList<>();
+        filterables.add(new KindFilter<>(nostr.base.Kind.valueOf(VOUCHER_KIND)));
+        Filters filters = new Filters(filterables);
+        filters.setLimit(Math.max(1, limit));
+        return filters;
+    }
+
+    private Filters buildKindOnlyFilters(int limit) {
         List<Filterable> filterables = new ArrayList<>();
         filterables.add(new KindFilter<>(nostr.base.Kind.valueOf(VOUCHER_KIND)));
         Filters filters = new Filters(filterables);

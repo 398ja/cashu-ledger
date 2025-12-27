@@ -69,6 +69,16 @@ class VoucherLedgerServiceImplTest {
         }
 
         @Override
+        public List<RelayEvent> fetchVoucherEvents(String voucherId, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public List<RelayEvent> searchVouchers(int limit) {
+            return List.of(new RelayEvent(event, "wss://relay.test"));
+        }
+
+        @Override
         public void disconnect() {
             // no-op for stub
         }

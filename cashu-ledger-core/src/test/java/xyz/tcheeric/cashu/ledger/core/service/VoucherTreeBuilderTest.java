@@ -69,6 +69,44 @@ class VoucherTreeBuilderTest {
         assertThat(built.depth()).isEqualTo(3);
     }
 
+    /**
+     * Ensures split children referenced via split_into are fetched and attached even when child events lack parent tags.
+     */
+    @Test
+    void shouldAttachSplitChildrenUsingSplitIntoHints() {
+        // Arrange
+        GenericEvent splitParent = voucherEvent("sp-1", List.of(
+                tag("d", "sp-1"),
+                tag("status", "split"),
+                tag("face_value", "3000"),
+                tag("token_amount", "3000"),
+                tag("split_into", "sp-child-1")
+        ));
+        GenericEvent splitChild = voucherEvent("sp-child-1", List.of(
+                tag("d", "sp-child-1"),
+                tag("status", "issued"),
+                tag("face_value", "1000"),
+                tag("token_amount", "1000")
+        ));
+
+        StubRelayConnectionManager relay = new StubRelayConnectionManager(splitParent, splitChild);
+        VoucherLedgerService service = new VoucherLedgerServiceImpl(
+                relay,
+                List.of("wss://relay.test"),
+                Duration.ofSeconds(2),
+                Duration.ofSeconds(2)
+        );
+
+        // Act
+        Optional<VoucherTree> tree = service.buildTree("sp-1", 5, TraversalDirection.DOWN);
+
+        // Assert
+        assertThat(tree).isPresent();
+        VoucherTree built = tree.orElseThrow();
+        assertThat(built.nodes()).containsKey("sp-child-1");
+        assertThat(built.childrenMap().get("sp-1")).contains("sp-child-1");
+    }
+
     private GenericEvent voucherEvent(String id, List<BaseTag> tags) {
         GenericEvent event = new GenericEvent();
         event.setId("e".repeat(64));
@@ -127,6 +165,20 @@ class VoucherTreeBuilderTest {
                 }
             });
             return found;
+        }
+
+        @Override
+        public List<RelayEvent> fetchVoucherEvents(String voucherId, int limit) {
+            GenericEvent evt = events.get(voucherId);
+            return evt == null ? List.of() : List.of(new RelayEvent(evt, "wss://relay.test"));
+        }
+
+        @Override
+        public List<RelayEvent> searchVouchers(int limit) {
+            return events.values().stream()
+                    .limit(limit)
+                    .map(evt -> new RelayEvent(evt, "wss://relay.test"))
+                    .toList();
         }
 
         @Override

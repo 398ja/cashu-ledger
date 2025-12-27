@@ -19,6 +19,7 @@ public record NostrEventMetadata(
         Instant createdAt,
         String relay,
         int kind,
-        List<List<String>> tags
+        List<List<String>> tags,
+        String signatureHex
 ) {
 }

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import xyz.tcheeric.cashu.ledger.cli.inspect.OutputFormat;
 import xyz.tcheeric.cashu.ledger.core.model.VoucherNode;
 import xyz.tcheeric.cashu.ledger.core.model.VoucherTree;
+import xyz.tcheeric.cashu.ledger.core.state.ValueConservationVerifier;
 
 import java.util.HashSet;
 import java.util.List;
@@ -23,7 +24,7 @@ final class TreeFormatter {
     String format(VoucherTree tree) {
         return switch (format) {
             case JSON -> formatJson(tree);
-            case TREE, TEXT -> formatTree(tree);
+            case TREE, TEXT, CSV -> formatTree(tree);
         };
     }
 
@@ -62,7 +63,11 @@ final class TreeFormatter {
                 .append("◉ ")
                 .append(node.voucherId())
                 .append(" [").append(node.faceValue()).append(", ").append(node.tokenAmount()).append("] ")
-                .append(node.status());
+                .append(formatStatus(node));
+        if (node.status() != null && node.status().name().equalsIgnoreCase("split")
+                && !ValueConservationVerifier.isConserved(node, tree)) {
+            sb.append(" ⚠ value drift");
+        }
         if (tree.target().voucherId().equals(node.voucherId())) {
             sb.append(" ← target");
         }
@@ -87,7 +92,7 @@ final class TreeFormatter {
         tree.nodes().values().forEach(node -> {
             ObjectNode n = nodes.addObject();
             n.put("voucherId", node.voucherId());
-            n.put("status", node.status());
+            n.put("status", formatStatus(node));
             n.put("faceValue", node.faceValue());
             n.put("tokenAmount", node.tokenAmount());
             n.put("unit", node.unit());
@@ -106,5 +111,9 @@ final class TreeFormatter {
         } catch (Exception e) {
             return "{\"error\":\"Failed to render JSON\"}";
         }
+    }
+
+    private String formatStatus(VoucherNode node) {
+        return node.status() == null ? "unknown" : node.status().name().toLowerCase();
     }
 }

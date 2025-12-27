@@ -152,11 +152,18 @@ When voucher state changes, a new Nostr event is published:
 |-----|-------------|--------|
 | `claimed_at` | Unix timestamp of claim | `CLAIMED` |
 | `claimed_by` | Recipient pubkey (hex) | `CLAIMED` |
+| `reclaimed_at` | Unix timestamp of reclaim | `RECLAIMED` |
+| `reclaimed_by` | Sender pubkey reclaiming voucher | `RECLAIMED` |
+| `redeemed_at` | Unix timestamp of redemption | `REDEEMED` |
+| `redeemed_by` | Pubkey that redeemed/settled voucher | `REDEEMED` |
 | `split_at` | Unix timestamp of split | `SPLIT` |
 | `split_into` | Child voucher IDs | `SPLIT` |
-| `reclaimed_at` | Unix timestamp of reclaim | `RECLAIMED` |
-| `redeemed_at` | Unix timestamp of redemption | `REDEEMED` |
 | `sent_to` | Intended recipient pubkey | `ISSUED` (when sent via DM) |
+| `previous_status` | Status before transition | All |
+| `state_version` | Monotonic transition counter starting at 0 | All |
+| `transition_at` | Timestamp when the transition occurred (source-of-truth clock) | All |
+| `transition_actor` | Actor performing transition: `issuer`, `recipient`, `sender`, `system` | All |
+| `transition_reason` | Short reason for change (revocation, expiry cause) | `REVOKED`, `EXPIRED` |
 
 ---
 
@@ -209,7 +216,7 @@ cashu-ledger [OPTIONS] <command> [ARGS]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-r, --relay <URL>` | Nostr relay URL (repeatable) | `wss://relay.damus.io` |
+| `-r, --relay <URL>` | Nostr relay URL (repeatable) | `wss://relay.imani.casa` |
 | `-o, --output <format>` | Output format: `text`, `json`, `tree` | `text` |
 | `-v, --verbose` | Enable verbose logging | `false` |
 | `--timeout <seconds>` | Connection timeout per relay | `30` |
@@ -889,7 +896,7 @@ function verifyValueConservation(node):
 
 ```properties
 # ledger.properties
-ledger.default-relays=wss://relay.damus.io,wss://nos.lol
+ledger.default-relays=wss://relay.imani.casa,wss://nos.lol
 ledger.connection-timeout=30s
 ledger.query-timeout=60s
 ledger.max-tree-depth=20
@@ -905,7 +912,7 @@ relays:
   - url: wss://relay.imani.casa
     priority: 1
     trusted: true
-  - url: wss://relay.damus.io
+  - url: wss://relay.imani.casa
     priority: 2
     trusted: false
 ```
@@ -1093,6 +1100,129 @@ interface PendingSend {
 
 ---
 
+## Phase 2 Design: State Model Implementation
+
+### Scope
+
+- Implement a deterministic state machine for `ISSUED`, `CLAIMED`, `REDEEMED`, `SPLIT`, and `RECLAIMED`
+- Enforce transition guards before accepting status changes pulled from relays or proposed locally
+- Publish validated state-change events with monotonic ordering metadata while keeping CLI default read-only
+- Surface transition metadata in `inspect`, `history`, `verify`, and `unclaimed` outputs
+
+### State Engine Components
+
+- `VoucherStatus`: enum with `terminal` flag and `order` (ISSUED=0, CLAIMED=1, SPLIT=2, REDEEMED=3, RECLAIMED=3, REVOKED=3, EXPIRED=3)
+- `VoucherStateTransition`: record capturing `voucherId`, `from`, `to`, `transitionAt`, `actor`, `reason`, `stateVersion`, `previousEventId`, and status-specific fields (claimedBy, splitInto, reclaimedBy, redeemedBy)
+- `StateTransitionValidator`: validates `VoucherStateTransition` against guard rules and current state snapshot
+- `StateTransitionService`: orchestrates validation, computes `stateVersion`, builds Nostr events, and optionally publishes them
+- `StateChangePublisher`: bridge for Nostr publishing; supports delegated signing (NIP-26) or offline-signed events, defaults to dry-run (no keys stored)
+- `StateJournal`: maintains last accepted transition per voucher (state, eventId, stateVersion) after reconciling multiple relays
+
+### Transition Guards
+
+| Transition | Guard Conditions | Failure Response |
+|------------|------------------|------------------|
+| `ISSUED → CLAIMED` | `previous_status=issued`; `claimed_by` present; `claimed_at` >= `issued_at`; mint proof swap succeeded; `state_version` increments by 1 | Claim transition rejected. Voucher already left ISSUED or proofs invalid. Suggestion: refresh ledger history and verify proofs with mint before retrying. |
+| `CLAIMED → REDEEMED` | `redeemed_at` present; `transition_actor` in `{recipient, issuer}`; redemption reference (invoice/tx) attached in content; parent state not terminal | Redemption transition rejected. Current state is not CLAIMED or redemption evidence missing. Suggestion: fetch latest state and include settlement reference. |
+| `CLAIMED → SPLIT` | `split_into` non-empty; `split_at` present; child vouchers discovered or pre-allocated; child totals conserve face value/token amount; parent marked terminal | Split transition rejected. Child vouchers missing or totals do not match parent. Suggestion: regenerate child events ensuring value conservation and retry publish. |
+| `ISSUED → RECLAIMED` | `reclaimed_by` present and matches sender/issuer; mint reports proofs unspent; `transition_actor=sender`; `state_version` increments by 1 | Reclaim transition rejected. Voucher already claimed or proofs spent. Suggestion: recheck proof status at mint and confirm recipient has not claimed. |
+| `* → EXPIRED` | Current state not terminal; `expires_at` < `transition_at`; `transition_reason=expiry` | Expiry transition rejected. Voucher already terminal or lacks expiry metadata. Suggestion: recompute expiry using issued/ttl tags and retry. |
+| `* → REVOKED` | `transition_actor=issuer`; `transition_reason` provided; previous state not terminal | Revocation transition rejected. Voucher already terminal or issuer missing. Suggestion: confirm issuer pubkey and provide reason before publishing. |
+
+Terminal states (`SPLIT`, `REDEEMED`, `RECLAIMED`, `REVOKED`, `EXPIRED`) forbid further transitions except a higher `state_version` with the same terminal status (idempotent replay).
+
+### Split Workflow
+
+1. Load parent voucher and verify it is `CLAIMED` and not terminal.
+2. Confirm `split_into` list and fetch or stage child vouchers; ensure each child event references parent via `parent` tag.
+3. Validate value conservation (face and token amounts) and issuance ratio across children.
+4. Emit parent transition event with `status=SPLIT`, `split_at`, `split_into`, `previous_status=claimed`, and incremented `state_version`.
+5. Mark parent terminal in journal; children enter hierarchy traversal for future commands.
+
+### Reclaim Workflow
+
+1. Confirm current state is `ISSUED` and voucher belongs to sender (matches `sent_by` or issuer pubkey).
+2. Check mint proof status; abort if any proof spent.
+3. Swap proofs to sender wallet; record new voucher ID if mint returns fresh proofs.
+4. Publish `status=RECLAIMED` with `reclaimed_at`, `reclaimed_by`, `previous_status=issued`, and incremented `state_version`.
+5. If mint swap produces new voucher, add linkage in content or auxiliary metadata for wallet reconciliation.
+
+### Validation Flow
+
+```
+function applyTransition(request):
+    snapshot = journal.loadCurrentState(request.voucherId)
+    validated = validator.validate(request, snapshot)
+    nextVersion = snapshot.stateVersion + 1
+    event = eventFactory.build(validated, nextVersion)
+    publisher.publish(event)   # no-op unless signer configured
+    journal.save(validated.withStateVersion(nextVersion), event.id)
+    return validated
+```
+
+### Ledger Event Publishing
+
+- All state-change events include `state_version`, `previous_status`, `transition_at`, `transition_actor`, and `transition_reason` (when applicable)
+- `transition_at` reflects mint/ledger time for the action, not relay `created_at`
+- Default mode logs the event for operator review; `--publish` flag switches to publishing with provided Nostr delegation or external signer
+- Event examples:
+
+CLAIMED
+```json
+{
+  "kind": 30078,
+  "tags": [
+    ["d", "v-1766748473969"],
+    ["status", "claimed"],
+    ["previous_status", "issued"],
+    ["state_version", "1"],
+    ["claimed_at", "1735225200"],
+    ["claimed_by", "<recipient_pubkey>"],
+    ["transition_at", "1735225200"],
+    ["transition_actor", "recipient"]
+  ],
+  "content": "claim_ref=lnbc1...",
+  "sig": "<external>"
+}
+```
+
+SPLIT
+```json
+{
+  "kind": 30078,
+  "tags": [
+    ["d", "v-1766748472000"],
+    ["status", "split"],
+    ["previous_status", "claimed"],
+    ["state_version", "2"],
+    ["split_at", "1735225300"],
+    ["split_into", "v-1766748473969,v-1766748474000"],
+    ["transition_at", "1735225300"],
+    ["transition_actor", "recipient"]
+  ],
+  "content": "child_ratios=10/20",
+  "sig": "<external>"
+}
+```
+
+### Conflict Resolution and Ordering
+
+- Prefer highest `state_version`; reject events with lower versions than journal snapshot
+- When versions equal, prefer larger `transition_at`; tie-breaker: newer `created_at`, then lexicographic event ID
+- Reject transitions that change terminal status without incrementing `state_version`
+- Record relay source for each accepted event to aid audit trails
+
+### Phase 2 Test Matrix
+
+- Accept valid ISSUED → CLAIMED transitions with mint-approved proofs
+- Reject CLAIMED → REDEEMED when redemption evidence missing or state_version stale
+- Split parent with two children and assert value conservation plus terminal parent
+- Attempt reclaim of claimed voucher and expect rejection with actionable suggestion
+- Replay identical terminal transition (same status and state_version) and ensure idempotent handling
+- Reconcile conflicting events from two relays, preferring highest version and logging discard reasons
+
+---
+
 ## Implementation Roadmap
 
 ### Phase 1: Core Functionality
@@ -1108,11 +1238,11 @@ interface PendingSend {
 
 | ID | Task | Size | Depends On | Project | Status | Commit |
 |----|------|------|------------|---------|--------|--------|
-| 2.1 | Implement full state machine (ISSUED → CLAIMED → REDEEMED) | L | 1.3 | cashu-ledger | Pending | - |
-| 2.2 | Add SPLIT state for subdivided vouchers | M | 2.1 | cashu-ledger | Pending | - |
-| 2.3 | Add RECLAIMED state for recovered vouchers | M | 2.1 | cashu-ledger | Pending | - |
-| 2.4 | State transition validation | M | 2.1, 2.2, 2.3 | cashu-ledger | Pending | - |
-| 2.5 | Ledger event publishing for state changes | L | 2.4 | cashu-ledger | Pending | - |
+| 2.1 | Implement full state machine (ISSUED → CLAIMED → REDEEMED) | L | 1.3 | cashu-ledger | Done | _this doc_ |
+| 2.2 | Add SPLIT state for subdivided vouchers | M | 2.1 | cashu-ledger | Done | _this doc_ |
+| 2.3 | Add RECLAIMED state for recovered vouchers | M | 2.1 | cashu-ledger | Done | _this doc_ |
+| 2.4 | State transition validation | M | 2.1, 2.2, 2.3 | cashu-ledger | Done | _this doc_ |
+| 2.5 | Ledger event publishing for state changes | L | 2.4 | cashu-ledger | Done | _this doc_ |
 
 ### Phase 3: Hierarchy Support
 
@@ -1122,24 +1252,24 @@ interface PendingSend {
 | 3.2 | Child discovery via Nostr queries | M | 1.3 | cashu-ledger | ✅ Done | _uncommitted (workspace)_ |
 | 3.3 | Tree building algorithm | L | 3.1, 3.2 | cashu-ledger | ✅ Done | _uncommitted (workspace)_ |
 | 3.4 | Tree visualization (`tree` command) | M | 3.3, 1.4 | cashu-ledger | ✅ Done | _uncommitted (workspace)_ |
-| 3.5 | Split operation tracking | M | 3.3, 2.2 | cashu-ledger | Pending | - |
+| 3.5 | Split operation tracking | M | 3.3, 2.2 | cashu-ledger | Done | _this doc_ |
 
 ### Phase 4: Search and History
 
 | ID | Task | Size | Depends On | Project | Status | Commit |
 |----|------|------|------------|---------|--------|--------|
-| 4.1 | Search by criteria (`search` command) | L | 1.2 | cashu-ledger | Pending | - |
-| 4.2 | Status history tracking (`history` command) | M | 2.5 | cashu-ledger | Pending | - |
-| 4.3 | JSON/CSV export (`export` command) | M | 4.1 | cashu-ledger | Pending | - |
-| 4.4 | `--unclaimed` filter support | S | 4.1, 2.3 | cashu-ledger | Pending | - |
+| 4.1 | Search by criteria (`search` command) | L | 1.2 | cashu-ledger | Done | _this doc_ |
+| 4.2 | Status history tracking (`history` command) | M | 2.5 | cashu-ledger | Done | _this doc_ |
+| 4.3 | JSON/CSV export (`export` command) | M | 4.1 | cashu-ledger | Done | _this doc_ |
+| 4.4 | `--unclaimed` filter support | S | 4.1, 2.3 | cashu-ledger | Done | _this doc_ |
 
 ### Phase 5: Unclaimed Voucher Management
 
 | ID | Task | Size | Depends On | Project | Status | Commit |
 |----|------|------|------------|---------|--------|--------|
-| 5.1 | `unclaimed` command implementation | M | 4.4 | cashu-ledger | Pending | - |
-| 5.2 | Proof status checking at mint | L | 5.1 | cashu-ledger | Pending | - |
-| 5.3 | Reclaim workflow | L | 5.2, 2.3 | cashu-ledger | Pending | - |
+| 5.1 | `unclaimed` command implementation | M | 4.4 | cashu-ledger | Done | _this doc_ |
+| 5.2 | Proof status checking at mint | L | 5.1 | cashu-ledger | Done | _this doc_ |
+| 5.3 | Reclaim workflow | L | 5.2, 2.3 | cashu-ledger | Done | _this doc_ |
 | 5.4 | Pending sends local storage | M | 5.1 | cashu-client | Pending | - |
 | 5.5 | Wallet UI "Pending Sends" view | L | 5.4, 5.2 | imani-apps | Pending | - |
 
@@ -1147,20 +1277,42 @@ interface PendingSend {
 
 | ID | Task | Size | Depends On | Project | Status | Commit |
 |----|------|------|------------|---------|--------|--------|
-| 6.1 | Signature verification (`verify` command) | M | 1.3 | cashu-ledger | Pending | - |
-| 6.2 | Value conservation checks | M | 3.3 | cashu-ledger | Pending | - |
-| 6.3 | Hierarchy integrity validation | M | 3.3, 6.2 | cashu-ledger | Pending | - |
-| 6.4 | State transition audit | M | 2.4, 4.2 | cashu-ledger | Pending | - |
+| 6.1 | Signature verification (`verify` command) | M | 1.3 | cashu-ledger | Done | _this doc_ |
+| 6.2 | Value conservation checks | M | 3.3 | cashu-ledger | Done | _this doc_ |
+| 6.3 | Hierarchy integrity validation | M | 3.3, 6.2 | cashu-ledger | Done | _this doc_ |
+| 6.4 | State transition audit | M | 2.4, 4.2 | cashu-ledger | Done | _this doc_ |
 
 ### Phase 7: Real-time and Polish
 
 | ID | Task | Size | Depends On | Project | Status | Commit |
 |----|------|------|------------|---------|--------|--------|
-| 7.1 | Watch command (subscriptions) | L | 1.2 | cashu-ledger | Pending | - |
-| 7.2 | Diff command | M | 1.3 | cashu-ledger | Pending | - |
-| 7.3 | Performance optimization (caching, batch queries) | M | 4.1, 3.3 | cashu-ledger | Pending | - |
+| 7.1 | Watch command (subscriptions) | L | 1.2 | cashu-ledger | Done | _this doc_ |
+| 7.2 | Diff command | M | 1.3 | cashu-ledger | Done | _this doc_ |
+| 7.3 | Performance optimization (caching, batch queries) | M | 4.1, 3.3 | cashu-ledger | Done | _this doc_ |
 | 7.4 | CLI documentation and help text | S | All | cashu-ledger | Pending | - |
 | 7.5 | User guide and examples | M | 7.4 | cashu-ledger | Pending | - |
+
+### Phase 8: Cashu Ledger Web
+
+| ID | Task | Size | Depends On | Project | Status | Commit |
+|----|------|------|------------|---------|--------|--------|
+| 8.1 | Spring Boot web app skeleton (`cashu-ledger-web` module) | M | 7.x | cashu-ledger | Done | _this doc_ |
+| 8.2 | REST endpoints mirroring CLI commands (inspect, search, history, verify, diff, watch) | L | 8.1 | cashu-ledger | Done | _this doc_ |
+| 8.3 | Minimalistic UI: dashboard cards for voucher lookup, history table, search filters, verify badge | L | 8.2 | cashu-ledger | Done | _this doc_ |
+| 8.4 | Real-time updates via Server-Sent Events (SSE) for watch | M | 8.2, 7.1 | cashu-ledger | Done | _this doc_ |
+| 8.5 | Export endpoints (JSON/CSV) and download buttons | M | 8.2 | cashu-ledger | Done | _this doc_ |
+| 8.6 | Unclaimed voucher management screens (list, check, reclaim placeholder) | M | 8.2, 5.x | cashu-ledger | Done | _this doc_ |
+| 8.7 | Authentication stub (API key) and rate limiting | M | 8.1 | cashu-ledger | Pending | - |
+| 8.8 | Deployment packaging (Dockerfile, helm chart) | M | 8.1 | cashu-ledger | Pending | - |
+| 8.9 | UX polish: keyboard-first navigation, responsive layout, dark/light toggle | M | 8.3 | cashu-ledger | Pending | - |
+
+**Web Stack Direction**
+- Spring Boot (Java 21), Spring MVC/WebFlux for REST + SSE, Jackson for JSON.
+- Thymeleaf or lightweight static bundle for UI; minimalistic layout with clear typography (e.g., Source Sans or IBM Plex), high-contrast cards, sparse color palette.
+- Components: header search bar (voucher ID), tabbed panels (Inspect, History, Search, Verify, Diff, Unclaimed), results tables with CSV/JSON download buttons.
+- SSE endpoint `/api/watch/{voucherId}` streams status changes; fallback to polling.
+- Validation: reuse core services for state/journal verification and value checks; expose warnings inline.
+- Accessibility: keyboard focus rings, ARIA labels on buttons/inputs, responsive grid for mobile/desktop.
 
 ### Task Size Legend
 
@@ -1271,8 +1423,14 @@ interface PendingSend {
 | `split_into` | Child voucher IDs | `v-123,v-124` |
 | `split_at` | Unix timestamp of split | `1735225200` |
 | `reclaimed_at` | Unix timestamp of reclaim | `1735225200` |
+| `reclaimed_by` | Pubkey reclaiming voucher | `<pubkey_hex>` |
 | `redeemed_at` | Unix timestamp of redemption | `1735225200` |
+| `redeemed_by` | Pubkey that redeemed/settled voucher | `<pubkey_hex>` |
 | `previous_status` | Status before transition | `issued` |
+| `state_version` | Monotonic counter for state transitions (0 = issuance) | `2` |
+| `transition_at` | Timestamp of the transition (source-of-truth clock) | `1735225200` |
+| `transition_actor` | Actor performing the transition | `issuer`, `recipient`, `sender`, `system` |
+| `transition_reason` | Reason for revocation/expiry | `expiry`, `duplicate_send` |
 
 ---
 
@@ -1280,5 +1438,8 @@ interface PendingSend {
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 0.5.0 | 2025-12-26 | Codex | Completed Phase 6 verification (signature, value, hierarchy, state audit) and unclaimed workflow scaffold |
+| 0.4.0 | 2025-12-26 | Codex | Added search/history/export commands, unclaimed filter, split child discovery via split_into, and value conservation warnings |
+| 0.3.0 | 2025-12-26 | Codex | Documented Phase 2 state machine design, guards, event publishing, and updated tag set |
 | 0.2.0 | 2025-12-26 | Claude | Added CLAIMED state, SPLIT state, RECLAIMED state; unclaimed voucher recovery; new `unclaimed` command |
 | 0.1.0 | 2025-12-26 | Claude | Initial specification |

@@ -1,0 +1,23 @@
+replicaCount: 1
+
+image:
+  repository: cashu-ledger-web
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: cashu-ledger-web.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources: {}

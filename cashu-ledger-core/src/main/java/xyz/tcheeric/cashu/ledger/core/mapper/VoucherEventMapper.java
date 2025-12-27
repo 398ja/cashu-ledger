@@ -9,6 +9,9 @@ import xyz.tcheeric.cashu.ledger.core.model.BackingStrategy;
 import xyz.tcheeric.cashu.ledger.core.model.NostrEventMetadata;
 import xyz.tcheeric.cashu.ledger.core.model.ParentContribution;
 import xyz.tcheeric.cashu.ledger.core.model.VoucherNode;
+import xyz.tcheeric.cashu.ledger.core.model.VoucherStateMetadata;
+import xyz.tcheeric.cashu.ledger.core.model.VoucherStatus;
+import xyz.tcheeric.cashu.ledger.core.model.TransitionActor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -37,6 +40,9 @@ public class VoucherEventMapper {
                 ? Instant.ofEpochSecond(createdAtEpoch)
                 : null;
         Instant expiresAt = values.expiresAtEpoch != null ? Instant.ofEpochSecond(values.expiresAtEpoch) : null;
+        Instant transitionAt = values.transitionAtEpoch != null
+                ? Instant.ofEpochSecond(values.transitionAtEpoch)
+                : createdAt;
 
         NostrEventMetadata metadata = new NostrEventMetadata(
                 event.getId(),
@@ -44,7 +50,23 @@ public class VoucherEventMapper {
                 createdAt,
                 relayUrl,
                 event.getKind(),
-                values.rawTags
+                values.rawTags,
+                toHex(event.getSignature())
+        );
+
+        VoucherStateMetadata stateMetadata = new VoucherStateMetadata(
+                values.previousStatus,
+                values.stateVersion,
+                transitionAt,
+                values.transitionActor,
+                values.transitionReason,
+                values.claimedBy,
+                toInstant(values.claimedAtEpoch),
+                values.redeemedBy,
+                toInstant(values.redeemedAtEpoch),
+                values.reclaimedBy,
+                toInstant(values.reclaimedAtEpoch),
+                values.splitInto
         );
 
         VoucherNode node = new VoucherNode(
@@ -60,6 +82,7 @@ public class VoucherEventMapper {
                 BackingStrategy.fromValue(values.backingStrategy),
                 values.issuanceRatio,
                 values.status,
+                stateMetadata,
                 createdAt,
                 expiresAt,
                 values.memo,
@@ -94,7 +117,12 @@ public class VoucherEventMapper {
 
             switch (code) {
                 case "d" -> values.voucherId = attributeValue(attributes, 0);
-                case "status" -> values.status = attributeValue(attributes, 0, "unknown");
+                case "status" -> values.status = VoucherStatus.fromValue(attributeValue(attributes, 0, "unknown"));
+                case "previous_status" -> values.previousStatus = VoucherStatus.fromValue(attributeValue(attributes, 0, "unknown"));
+                case "state_version" -> values.stateVersion = parseLong(attributeValue(attributes, 0), 0L);
+                case "transition_at" -> values.transitionAtEpoch = parseLong(attributeValue(attributes, 0), null);
+                case "transition_actor" -> values.transitionActor = TransitionActor.fromValue(attributeValue(attributes, 0));
+                case "transition_reason" -> values.transitionReason = attributeValue(attributes, 0);
                 case "issuer_id" -> values.issuerId = attributeValue(attributes, 0);
                 case "face_value" -> values.faceValue = parseLong(attributeValue(attributes, 0), 0L);
                 case "unit" -> values.unit = attributeValue(attributes, 0);
@@ -104,6 +132,13 @@ public class VoucherEventMapper {
                 case "issuance_ratio" -> values.issuanceRatio = parseBigDecimal(attributeValue(attributes, 0));
                 case "expires_at" -> values.expiresAtEpoch = parseLong(attributeValue(attributes, 0), null);
                 case "parent" -> values.parentContributions.add(parseParent(attributes));
+                case "claimed_by" -> values.claimedBy = attributeValue(attributes, 0);
+                case "claimed_at" -> values.claimedAtEpoch = parseLong(attributeValue(attributes, 0), null);
+                case "redeemed_by" -> values.redeemedBy = attributeValue(attributes, 0);
+                case "redeemed_at" -> values.redeemedAtEpoch = parseLong(attributeValue(attributes, 0), null);
+                case "reclaimed_by" -> values.reclaimedBy = attributeValue(attributes, 0);
+                case "reclaimed_at" -> values.reclaimedAtEpoch = parseLong(attributeValue(attributes, 0), null);
+                case "split_into" -> values.splitInto.addAll(parseSplitInto(attributes));
                 default -> {
                     // ignore unknown tags for now
                 }
@@ -121,6 +156,22 @@ public class VoucherEventMapper {
         long contributedTokens = parseLong(attributeValue(attributes, 1), 0L);
         long contributedFace = parseLong(attributeValue(attributes, 2), 0L);
         return new ParentContribution(parentId, contributedTokens, contributedFace);
+    }
+
+    private List<String> parseSplitInto(List<ElementAttribute> attributes) {
+        List<String> values = new ArrayList<>();
+        for (ElementAttribute attribute : attributes) {
+            Object val = attribute.value();
+            if (val == null) {
+                continue;
+            }
+            for (String candidate : val.toString().split(",")) {
+                if (!candidate.isBlank()) {
+                    values.add(candidate.trim());
+                }
+            }
+        }
+        return values;
     }
 
     private String attributeValue(List<ElementAttribute> attributes, int index) {
@@ -157,6 +208,10 @@ public class VoucherEventMapper {
         }
     }
 
+    private Instant toInstant(Long epochSeconds) {
+        return epochSeconds == null ? null : Instant.ofEpochSecond(epochSeconds);
+    }
+
     private String toHex(PublicKey publicKey) {
         if (publicKey == null) {
             return null;
@@ -164,12 +219,20 @@ public class VoucherEventMapper {
         return publicKey.toString();
     }
 
+    private String toHex(nostr.base.Signature signature) {
+        if (signature == null) {
+            return null;
+        }
+        return signature.toString();
+    }
+
     private static final class TagValues {
         private String voucherId;
         private String issuerId;
         private String backingStrategy;
         private String unit;
-        private String status = "unknown";
+        private VoucherStatus status = VoucherStatus.UNKNOWN;
+        private VoucherStatus previousStatus = VoucherStatus.UNKNOWN;
         private String memo;
         private long faceValue;
         private long originalFaceValue;
@@ -177,8 +240,19 @@ public class VoucherEventMapper {
         private long originalTokenAmount;
         private int decimals;
         private Long expiresAtEpoch;
+        private Long transitionAtEpoch;
+        private Long claimedAtEpoch;
+        private Long redeemedAtEpoch;
+        private Long reclaimedAtEpoch;
+        private long stateVersion = 0L;
+        private TransitionActor transitionActor = TransitionActor.UNKNOWN;
+        private String transitionReason;
+        private String claimedBy;
+        private String redeemedBy;
+        private String reclaimedBy;
         private BigDecimal issuanceRatio = BigDecimal.ZERO;
         private List<ParentContribution> parentContributions = new ArrayList<>();
+        private List<String> splitInto = new ArrayList<>();
         private List<List<String>> rawTags = new ArrayList<>();
     }
 }

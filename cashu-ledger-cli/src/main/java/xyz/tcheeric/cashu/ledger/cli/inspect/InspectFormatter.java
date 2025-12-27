@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import xyz.tcheeric.cashu.ledger.core.model.ParentContribution;
 import xyz.tcheeric.cashu.ledger.core.model.VoucherNode;
+import xyz.tcheeric.cashu.ledger.core.model.VoucherStateMetadata;
+import xyz.tcheeric.cashu.ledger.core.model.VoucherStatus;
 
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -23,14 +25,24 @@ final class InspectFormatter {
         return switch (format) {
             case JSON -> formatJson(node);
             case TREE -> formatTree(node);
-            case TEXT -> formatText(node);
+            case TEXT, CSV -> formatText(node);
         };
     }
 
     private String formatText(VoucherNode node) {
+        VoucherStateMetadata state = node.stateMetadata() != null
+                ? node.stateMetadata()
+                : VoucherStateMetadata.empty();
         StringBuilder sb = new StringBuilder();
         sb.append("Voucher: ").append(node.voucherId()).append(System.lineSeparator());
-        sb.append("Status:           ").append(node.status()).append(System.lineSeparator());
+        sb.append("Status:           ").append(formatStatus(node.status())).append(System.lineSeparator());
+        sb.append("State Version:    ").append(state.stateVersion()).append(System.lineSeparator());
+        sb.append("Previous Status:  ").append(formatStatus(state.previousStatus())).append(System.lineSeparator());
+        sb.append("Transition At:    ").append(formatInstant(state.transitionAt())).append(System.lineSeparator());
+        sb.append("Transition Actor: ").append(state.transitionActor()).append(System.lineSeparator());
+        if (state.transitionReason() != null && !state.transitionReason().isBlank()) {
+            sb.append("Transition Reason: ").append(state.transitionReason()).append(System.lineSeparator());
+        }
         sb.append("Issuer ID:        ").append(orUnknown(node.issuerId())).append(System.lineSeparator());
         sb.append("Issuer PubKey:    ").append(orUnknown(node.issuerPublicKey())).append(System.lineSeparator());
         sb.append(System.lineSeparator());
@@ -49,6 +61,18 @@ final class InspectFormatter {
         sb.append("Lifecycle").append(System.lineSeparator());
         sb.append("  Issued At:      ").append(formatInstant(node.issuedAt())).append(System.lineSeparator());
         sb.append("  Expires At:     ").append(formatInstant(node.expiresAt())).append(System.lineSeparator());
+        sb.append(System.lineSeparator());
+
+        sb.append("State Metadata").append(System.lineSeparator());
+        sb.append("  Claimed By:     ").append(orUnknown(state.claimedBy()))
+                .append(" at ").append(formatInstant(state.claimedAt())).append(System.lineSeparator());
+        sb.append("  Redeemed By:    ").append(orUnknown(state.redeemedBy()))
+                .append(" at ").append(formatInstant(state.redeemedAt())).append(System.lineSeparator());
+        sb.append("  Reclaimed By:   ").append(orUnknown(state.reclaimedBy()))
+                .append(" at ").append(formatInstant(state.reclaimedAt())).append(System.lineSeparator());
+        if (!state.splitInto().isEmpty()) {
+            sb.append("  Split Into:     ").append(String.join(", ", state.splitInto())).append(System.lineSeparator());
+        }
         sb.append(System.lineSeparator());
 
         sb.append("Parents").append(System.lineSeparator());
@@ -75,7 +99,7 @@ final class InspectFormatter {
     private String formatJson(VoucherNode node) {
         ObjectNode root = OBJECT_MAPPER.createObjectNode();
         root.put("voucherId", node.voucherId());
-        root.put("status", node.status());
+        root.put("status", formatStatus(node.status()));
         root.put("issuerId", node.issuerId());
         root.put("issuerPublicKey", node.issuerPublicKey());
 
@@ -92,6 +116,24 @@ final class InspectFormatter {
         ObjectNode lifecycle = root.putObject("lifecycle");
         lifecycle.put("issuedAt", formatInstant(node.issuedAt()));
         lifecycle.put("expiresAt", formatInstant(node.expiresAt()));
+
+        VoucherStateMetadata state = node.stateMetadata() != null
+                ? node.stateMetadata()
+                : VoucherStateMetadata.empty();
+        ObjectNode stateNode = root.putObject("state");
+        stateNode.put("stateVersion", state.stateVersion());
+        stateNode.put("previousStatus", formatStatus(state.previousStatus()));
+        stateNode.put("transitionAt", formatInstant(state.transitionAt()));
+        stateNode.put("transitionActor", state.transitionActor().name().toLowerCase());
+        stateNode.put("transitionReason", state.transitionReason());
+        stateNode.put("claimedBy", state.claimedBy());
+        stateNode.put("claimedAt", formatInstant(state.claimedAt()));
+        stateNode.put("redeemedBy", state.redeemedBy());
+        stateNode.put("redeemedAt", formatInstant(state.redeemedAt()));
+        stateNode.put("reclaimedBy", state.reclaimedBy());
+        stateNode.put("reclaimedAt", formatInstant(state.reclaimedAt()));
+        var split = stateNode.putArray("splitInto");
+        state.splitInto().forEach(split::add);
 
         ObjectNode event = root.putObject("event");
         event.put("eventId", node.eventMetadata().eventId());
@@ -121,7 +163,7 @@ final class InspectFormatter {
         sb.append("Voucher Tree").append(System.lineSeparator());
         sb.append("◉ ").append(node.voucherId())
                 .append(" [").append(node.faceValue()).append(", ").append(node.tokenAmount()).append("] ")
-                .append(node.status()).append(System.lineSeparator());
+                .append(formatStatus(node.status())).append(System.lineSeparator());
         if (node.parentContributions() == null || node.parentContributions().isEmpty()) {
             sb.append("└── (root)").append(System.lineSeparator());
         } else {
@@ -142,6 +184,10 @@ final class InspectFormatter {
 
     private String orUnknown(String value) {
         return value == null || value.isBlank() ? "unknown" : value;
+    }
+
+    private String formatStatus(VoucherStatus status) {
+        return status == null ? "unknown" : status.name().toLowerCase();
     }
 
     private String formatInstant(java.time.Instant instant) {

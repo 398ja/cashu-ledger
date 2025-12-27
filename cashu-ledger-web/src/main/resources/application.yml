@@ -1,0 +1,25 @@
+server:
+  port: 8080
+
+ledger:
+  web:
+    relays:
+      - wss://relay.imani.casa
+    timeout: 30s
+    cache-ttl: 30s
+
+spring:
+  thymeleaf:
+    cache: false
+
+  security:
+    user:
+      name: disabled
+      password: disabled
+
+ledger:
+  web:
+    relays:
+      - wss://relay.imani.casa
+    timeout: 30s
+    cache-ttl: 30s

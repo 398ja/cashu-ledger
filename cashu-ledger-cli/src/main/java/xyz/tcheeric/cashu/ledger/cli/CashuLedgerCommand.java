@@ -3,6 +3,13 @@ package xyz.tcheeric.cashu.ledger.cli;
 import picocli.CommandLine;
 import xyz.tcheeric.cashu.ledger.cli.inspect.InspectCommand;
 import xyz.tcheeric.cashu.ledger.cli.tree.TreeCommand;
+import xyz.tcheeric.cashu.ledger.cli.search.SearchCommand;
+import xyz.tcheeric.cashu.ledger.cli.history.HistoryCommand;
+import xyz.tcheeric.cashu.ledger.cli.export.ExportCommand;
+import xyz.tcheeric.cashu.ledger.cli.unclaimed.UnclaimedCommand;
+import xyz.tcheeric.cashu.ledger.cli.verify.VerifyCommand;
+import xyz.tcheeric.cashu.ledger.cli.diff.DiffCommand;
+import xyz.tcheeric.cashu.ledger.cli.watch.WatchCommand;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,7 +20,14 @@ import java.util.List;
         mixinStandardHelpOptions = true,
         subcommands = {
                 InspectCommand.class,
-                TreeCommand.class
+                TreeCommand.class,
+                SearchCommand.class,
+                HistoryCommand.class,
+                ExportCommand.class,
+                UnclaimedCommand.class,
+                VerifyCommand.class,
+                DiffCommand.class,
+                WatchCommand.class
         }
 )
 public class CashuLedgerCommand implements Runnable {
@@ -46,7 +60,7 @@ public class CashuLedgerCommand implements Runnable {
 
     public List<String> relayUrls() {
         if (relayUrls == null || relayUrls.isEmpty()) {
-            return List.of("wss://relay.damus.io");
+            return List.of("wss://relay.imani.casa");
         }
         return relayUrls;
     }

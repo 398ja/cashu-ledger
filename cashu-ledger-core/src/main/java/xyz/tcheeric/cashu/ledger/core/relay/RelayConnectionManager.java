@@ -37,6 +37,23 @@ public interface RelayConnectionManager extends AutoCloseable {
     List<RelayEvent> searchChildren(String parentVoucherId, int limit);
 
     /**
+     * Fetches all voucher events for a given voucher ID (for history).
+     *
+     * @param voucherId voucher identifier
+     * @param limit     maximum events to fetch
+     * @return list of events across relays
+     */
+    List<RelayEvent> fetchVoucherEvents(String voucherId, int limit);
+
+    /**
+     * Broad voucher search (client-side filtering is applied by service).
+     *
+     * @param limit maximum number of events to return
+     * @return events discovered across relays
+     */
+    List<RelayEvent> searchVouchers(int limit);
+
+    /**
      * Disconnects from all relays.
      */
     void disconnect();
