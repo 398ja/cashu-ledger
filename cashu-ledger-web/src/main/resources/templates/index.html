@@ -38,7 +38,7 @@
         }
     </style>
 </head>
-<body data-api-base="https://staging.imani.casa/api/v1">
+<body data-api-base="/proxy">
 <div class="top">
     <div>
         <h1>Cashu Ledger</h1>
@@ -53,7 +53,7 @@
 <div class="card" style="margin-bottom:16px;">
     <div class="row" style="align-items:center; gap:8px; flex-wrap:wrap;">
         <label for="api-base" style="margin:0;">API Base</label>
-        <input id="api-base" class="api-input" placeholder="https://staging.imani.casa/api/v1" aria-label="API base URL">
+        <input id="api-base" class="api-input" placeholder="/proxy or https://staging.imani.casa/api/v1" aria-label="API base URL">
         <button class="ghost-btn" id="api-save">Save</button>
         <span id="api-status" style="color:var(--muted); font-size:12px;"></span>
     </div>
@@ -148,8 +148,12 @@
         const out = document.getElementById('inspect-out');
         if (!id) return;
         out.textContent = 'Loading...';
-        const res = await fetch(api(`/vouchers/${encodeURIComponent(id)}`));
-        out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : 'Not found';
+        try {
+            const res = await fetch(api(`/vouchers/${encodeURIComponent(id)}`));
+            out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : `Not found (status ${res.status})`;
+        } catch (e) {
+            out.textContent = `Request failed: ${e}`;
+        }
     }
     async function search() {
         const issuer = document.getElementById('search-issuer').value.trim();
@@ -161,24 +165,36 @@
         if (issuer) params.append('issuer', issuer);
         if (status) params.append('status', status);
         if (unclaimed) params.append('unclaimed', 'true');
-        const res = await fetch(api(`/vouchers?${params.toString()}`));
-        out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : 'Error';
+        try {
+            const res = await fetch(api(`/vouchers?${params.toString()}`));
+            out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : `Error (status ${res.status})`;
+        } catch (e) {
+            out.textContent = `Request failed: ${e}`;
+        }
     }
     async function history() {
         const id = document.getElementById('history-id').value.trim();
         const out = document.getElementById('history-out');
         if (!id) return;
         out.textContent = 'Loading...';
-        const res = await fetch(api(`/vouchers/${encodeURIComponent(id)}/history`));
-        out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : 'Not found';
+        try {
+            const res = await fetch(api(`/vouchers/${encodeURIComponent(id)}/history`));
+            out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : `Not found (status ${res.status})`;
+        } catch (e) {
+            out.textContent = `Request failed: ${e}`;
+        }
     }
     async function verify() {
         const id = document.getElementById('verify-id').value.trim();
         const out = document.getElementById('verify-out');
         if (!id) return;
         out.textContent = 'Loading...';
-        const res = await fetch(api(`/vouchers/${encodeURIComponent(id)}/verify`));
-        out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : 'Not found';
+        try {
+            const res = await fetch(api(`/vouchers/${encodeURIComponent(id)}/verify`));
+            out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : `Not found (status ${res.status})`;
+        } catch (e) {
+            out.textContent = `Request failed: ${e}`;
+        }
     }
     async function diff() {
         const left = document.getElementById('diff-left').value.trim();
@@ -186,22 +202,30 @@
         const out = document.getElementById('diff-out');
         if (!left || !right) return;
         out.textContent = 'Loading...';
-        const res = await fetch(api(`/vouchers/${encodeURIComponent(left)}/diff/${encodeURIComponent(right)}`));
-        out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : 'Not found';
+        try {
+            const res = await fetch(api(`/vouchers/${encodeURIComponent(left)}/diff/${encodeURIComponent(right)}`));
+            out.textContent = res.ok ? JSON.stringify(await res.json(), null, 2) : `Not found (status ${res.status})`;
+        } catch (e) {
+            out.textContent = `Request failed: ${e}`;
+        }
     }
     function watch() {
         const id = document.getElementById('watch-id').value.trim();
         const out = document.getElementById('watch-out');
         if (!id) return;
         out.textContent = 'Starting...';
-        const source = new EventSource(api(`/watch/${encodeURIComponent(id)}`));
-        source.onmessage = (evt) => {
-            out.textContent += `${evt.data}\n`;
-        };
-        source.onerror = () => {
-            out.textContent += 'Stream closed\n';
-            source.close();
-        };
+        try {
+            const source = new EventSource(api(`/watch/${encodeURIComponent(id)}`));
+            source.onmessage = (evt) => {
+                out.textContent += `${evt.data}\n`;
+            };
+            source.onerror = () => {
+                out.textContent += 'Stream closed\n';
+                source.close();
+            };
+        } catch (e) {
+            out.textContent = `Request failed: ${e}`;
+        }
     }
 </script>
 <script>

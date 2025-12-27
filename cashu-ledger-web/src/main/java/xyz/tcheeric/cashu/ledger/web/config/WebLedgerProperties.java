@@ -10,6 +10,7 @@ public class WebLedgerProperties {
     private List<String> relays = List.of("wss://relay.imani.casa");
     private Duration timeout = Duration.ofSeconds(30);
     private Duration cacheTtl = Duration.ofSeconds(30);
+    private String apiBase = "https://staging.imani.casa/api/v1";
 
     public List<String> getRelays() {
         return relays;
@@ -33,5 +34,13 @@ public class WebLedgerProperties {
 
     public void setCacheTtl(Duration cacheTtl) {
         this.cacheTtl = cacheTtl;
+    }
+
+    public String getApiBase() {
+        return apiBase;
+    }
+
+    public void setApiBase(String apiBase) {
+        this.apiBase = apiBase;
     }
 }
