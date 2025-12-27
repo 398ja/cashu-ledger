@@ -11,16 +11,29 @@
         body { margin:0; font-family:"Inter",system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); padding:24px; }
         h1 { margin: 0; font-size: 26px; }
         .top { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; margin-bottom:20px; gap:12px; }
-        .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:16px; }
+        .layout { display:grid; grid-template-columns: 250px 1fr; gap:16px; align-items:start; }
+        .sidebar { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px; min-height:420px; }
+        .menu-title { font-weight:700; letter-spacing:.4px; font-size:12px; color:var(--muted); text-transform:uppercase; padding:8px; }
+        .nav-btn { border:none; background:transparent; color:var(--text); text-align:left; padding:10px 12px; border-radius:8px; cursor:pointer; font-weight:600; }
+        .nav-btn:hover, .nav-btn.active { background:rgba(52,211,153,.12); color:var(--accent); }
+        .content { display:flex; flex-direction:column; gap:16px; }
         .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; }
         label { display:block; margin-bottom:6px; color:var(--muted); font-size:12px; letter-spacing:.4px; text-transform:uppercase; }
         input, select { width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:#0b1220; color:var(--text); }
-        button { margin-top:8px; padding:10px 12px; border:none; border-radius:8px; background:var(--accent); color:#0b1220; font-weight:600; cursor:pointer; }
+        button.primary { margin-top:8px; padding:10px 12px; border:none; border-radius:8px; background:var(--accent); color:#0b1220; font-weight:600; cursor:pointer; }
         button:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-        pre { background:#0b1220; border:1px solid var(--border); padding:12px; border-radius:8px; overflow:auto; max-height:320px; }
+        pre { background:#0b1220; border:1px solid var(--border); padding:12px; border-radius:8px; overflow:auto; min-height:180px; }
         .row { display:flex; gap:8px; flex-wrap:wrap; }
         .toggle { display:inline-flex; gap:6px; align-items:center; cursor:pointer; color:var(--muted); font-size:12px; }
         .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:rgba(52,211,153,.12); color:var(--accent); font-size:12px; }
+        .hamburger { border:1px solid var(--border); background:var(--card); color:var(--text); padding:8px 10px; border-radius:8px; cursor:pointer; display:none; }
+        @media (max-width: 960px) {
+            body { padding:16px; }
+            .layout { grid-template-columns: 1fr; }
+            .sidebar { display:none; }
+            .sidebar.open { display:flex; }
+            .hamburger { display:inline-flex; align-items:center; gap:6px; }
+        }
     </style>
 </head>
 <body>
@@ -29,69 +42,84 @@
         <h1>Cashu Ledger</h1>
         <div class="pill">Relay: wss://relay.imani.casa</div>
     </div>
-    <label class="toggle"><input type="checkbox" id="theme-toggle"> Light mode</label>
+    <div class="row" style="align-items:center;">
+        <button class="hamburger" id="menu-toggle" aria-label="Toggle navigation">☰ Menu</button>
+        <label class="toggle"><input type="checkbox" id="theme-toggle"> Light mode</label>
+    </div>
 </div>
 
-<div class="grid">
-    <div class="card">
-        <h3>Inspect</h3>
-        <label for="inspect-id">Voucher ID</label>
-        <input id="inspect-id" placeholder="v-123..." aria-label="Inspect voucher ID">
-        <button onclick="inspect()">Inspect</button>
-        <pre id="inspect-out"></pre>
-    </div>
+<div class="layout">
+    <nav class="sidebar" id="sidebar">
+        <div class="menu-title">Commands</div>
+        <button class="nav-btn active" data-target="inspect">Inspect</button>
+        <button class="nav-btn" data-target="search">Search</button>
+        <button class="nav-btn" data-target="history">History</button>
+        <button class="nav-btn" data-target="verify">Verify</button>
+        <button class="nav-btn" data-target="diff">Diff</button>
+        <button class="nav-btn" data-target="watch">Watch</button>
+    </nav>
 
-    <div class="card">
-        <h3>Search</h3>
-        <label for="search-issuer">Issuer</label>
-        <input id="search-issuer" placeholder="merchant-001" aria-label="Search issuer">
-        <label for="search-status">Status</label>
-        <select id="search-status" aria-label="Search status">
-            <option value="">Any</option>
-            <option>issued</option>
-            <option>claimed</option>
-            <option>split</option>
-            <option>redeemed</option>
-            <option>reclaimed</option>
-        </select>
-        <label><input type="checkbox" id="search-unclaimed"> Unclaimed only</label>
-        <button onclick="search()">Search</button>
-        <pre id="search-out"></pre>
-    </div>
-
-    <div class="card">
-        <h3>History</h3>
-        <label for="history-id">Voucher ID</label>
-        <input id="history-id" placeholder="v-123..." aria-label="History voucher ID">
-        <button onclick="history()">History</button>
-        <pre id="history-out"></pre>
-    </div>
-
-    <div class="card">
-        <h3>Verify</h3>
-        <label for="verify-id">Voucher ID</label>
-        <input id="verify-id" placeholder="v-123..." aria-label="Verify voucher ID">
-        <button onclick="verify()">Verify</button>
-        <pre id="verify-out"></pre>
-    </div>
-
-    <div class="card">
-        <h3>Diff</h3>
-        <div class="row">
-            <input id="diff-left" placeholder="left v-123..." aria-label="Left voucher ID">
-            <input id="diff-right" placeholder="right v-456..." aria-label="Right voucher ID">
+    <section class="content">
+        <div class="card panel" data-section="inspect">
+            <h3>Inspect</h3>
+            <label for="inspect-id">Voucher ID</label>
+            <input id="inspect-id" placeholder="v-123..." aria-label="Inspect voucher ID">
+            <button class="primary" onclick="inspect()">Inspect</button>
+            <pre id="inspect-out"></pre>
         </div>
-        <button onclick="diff()">Compare</button>
-        <pre id="diff-out"></pre>
-    </div>
 
-    <div class="card">
-        <h3>Watch (SSE)</h3>
-        <label for="watch-id">Voucher ID</label>
-        <input id="watch-id" placeholder="v-123..." aria-label="Watch voucher ID">
-        <button onclick="watch()">Start</button>
-        <pre id="watch-out"></pre>
-    </div>
+        <div class="card panel" data-section="search" hidden>
+            <h3>Search</h3>
+            <label for="search-issuer">Issuer</label>
+            <input id="search-issuer" placeholder="merchant-001" aria-label="Search issuer">
+            <label for="search-status">Status</label>
+            <select id="search-status" aria-label="Search status">
+                <option value="">Any</option>
+                <option>issued</option>
+                <option>claimed</option>
+                <option>split</option>
+                <option>redeemed</option>
+                <option>reclaimed</option>
+            </select>
+            <label><input type="checkbox" id="search-unclaimed"> Unclaimed only</label>
+            <button class="primary" onclick="search()">Search</button>
+            <pre id="search-out"></pre>
+        </div>
+
+        <div class="card panel" data-section="history" hidden>
+            <h3>History</h3>
+            <label for="history-id">Voucher ID</label>
+            <input id="history-id" placeholder="v-123..." aria-label="History voucher ID">
+            <button class="primary" onclick="history()">History</button>
+            <pre id="history-out"></pre>
+        </div>
+
+        <div class="card panel" data-section="verify" hidden>
+            <h3>Verify</h3>
+            <label for="verify-id">Voucher ID</label>
+            <input id="verify-id" placeholder="v-123..." aria-label="Verify voucher ID">
+            <button class="primary" onclick="verify()">Verify</button>
+            <pre id="verify-out"></pre>
+        </div>
+
+        <div class="card panel" data-section="diff" hidden>
+            <h3>Diff</h3>
+            <div class="row">
+                <input id="diff-left" placeholder="left v-123..." aria-label="Left voucher ID">
+                <input id="diff-right" placeholder="right v-456..." aria-label="Right voucher ID">
+            </div>
+            <button class="primary" onclick="diff()">Compare</button>
+            <pre id="diff-out"></pre>
+        </div>
+
+        <div class="card panel" data-section="watch" hidden>
+            <h3>Watch (SSE)</h3>
+            <label for="watch-id">Voucher ID</label>
+            <input id="watch-id" placeholder="v-123..." aria-label="Watch voucher ID">
+            <button class="primary" onclick="watch()">Start</button>
+            <pre id="watch-out"></pre>
+        </div>
+    </section>
 </div>
 
 <script>
@@ -172,6 +200,33 @@
             document.documentElement.style.setProperty('--muted', '#9ca3af');
             document.documentElement.style.setProperty('--border', '#1f2937');
         }
+    });
+
+    const sidebar = document.getElementById('sidebar');
+    const menuToggle = document.getElementById('menu-toggle');
+    const navButtons = Array.from(document.querySelectorAll('.nav-btn'));
+    const panels = Array.from(document.querySelectorAll('.panel'));
+
+    function activate(target) {
+        navButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.target === target));
+        panels.forEach(panel => {
+            if (panel.dataset.section === target) {
+                panel.removeAttribute('hidden');
+            } else {
+                panel.setAttribute('hidden', 'hidden');
+            }
+        });
+        if (sidebar.classList.contains('open')) {
+            sidebar.classList.remove('open');
+        }
+    }
+
+    navButtons.forEach(btn => {
+        btn.addEventListener('click', () => activate(btn.dataset.target));
+    });
+
+    menuToggle.addEventListener('click', () => {
+        sidebar.classList.toggle('open');
     });
 </script>
 </body>
