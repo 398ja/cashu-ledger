@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 6060
 
 ledger:
   web:
@@ -16,10 +16,3 @@ spring:
     user:
       name: disabled
       password: disabled
-
-ledger:
-  web:
-    relays:
-      - wss://relay.imani.casa
-    timeout: 30s
-    cache-ttl: 30s
