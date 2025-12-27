@@ -186,5 +186,17 @@
                 <maven.deploy.skip>true</maven.deploy.skip>
             </properties>
         </profile>
+        <profile>
+            <id>integration-tests</id>
+            <modules>
+                <module>cashu-ledger-integration-tests</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>e2e-tests</id>
+            <modules>
+                <module>cashu-ledger-e2e-tests</module>
+            </modules>
+        </profile>
     </profiles>
 </project>
