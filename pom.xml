@@ -177,4 +177,14 @@
             </plugins>
         </pluginManagement>
     </build>
+
+    <profiles>
+        <profile>
+            <id>container-push</id>
+            <properties>
+                <!-- Skip default Maven deploy when pushing images via Jib -->
+                <maven.deploy.skip>true</maven.deploy.skip>
+            </properties>
+        </profile>
+    </profiles>
 </project>
