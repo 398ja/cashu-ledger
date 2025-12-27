@@ -27,6 +27,8 @@
         .toggle { display:inline-flex; gap:6px; align-items:center; cursor:pointer; color:var(--muted); font-size:12px; }
         .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:rgba(52,211,153,.12); color:var(--accent); font-size:12px; }
         .hamburger { border:1px solid var(--border); background:var(--card); color:var(--text); padding:8px 10px; border-radius:8px; cursor:pointer; display:none; }
+        .api-input { width:260px; max-width:100%; }
+        .ghost-btn { border:1px solid var(--border); background:transparent; color:var(--text); padding:8px 10px; border-radius:8px; cursor:pointer; }
         @media (max-width: 960px) {
             body { padding:16px; }
             .layout { grid-template-columns: 1fr; }
@@ -45,6 +47,15 @@
     <div class="row" style="align-items:center;">
         <button class="hamburger" id="menu-toggle" aria-label="Toggle navigation">☰ Menu</button>
         <label class="toggle"><input type="checkbox" id="theme-toggle"> Light mode</label>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+    <div class="row" style="align-items:center; gap:8px; flex-wrap:wrap;">
+        <label for="api-base" style="margin:0;">API Base</label>
+        <input id="api-base" class="api-input" placeholder="https://staging.imani.casa/api/v1" aria-label="API base URL">
+        <button class="ghost-btn" id="api-save">Save</button>
+        <span id="api-status" style="color:var(--muted); font-size:12px;"></span>
     </div>
 </div>
 
@@ -123,13 +134,13 @@
 </div>
 
 <script>
-    const API_BASE = document.body.dataset.apiBase || '';
+    let apiBase = localStorage.getItem('cashu-ledger-api-base') || document.body.dataset.apiBase || '';
 
     const api = (path) => {
-        if (!API_BASE) {
+        if (!apiBase) {
             return path;
         }
-        return API_BASE.replace(/\/$/, '') + path;
+        return apiBase.replace(/\/$/, '') + path;
     };
 
     async function inspect() {
@@ -236,6 +247,18 @@
 
     menuToggle.addEventListener('click', () => {
         sidebar.classList.toggle('open');
+    });
+
+    const apiInput = document.getElementById('api-base');
+    const apiStatus = document.getElementById('api-status');
+    const apiSave = document.getElementById('api-save');
+    apiInput.value = apiBase;
+    apiStatus.textContent = apiBase ? `Using ${apiBase}` : 'Using relative /api/v1';
+    apiSave.addEventListener('click', () => {
+        apiBase = apiInput.value.trim();
+        localStorage.setItem('cashu-ledger-api-base', apiBase);
+        apiStatus.textContent = apiBase ? `Using ${apiBase}` : 'Using relative /api/v1';
+        setTimeout(() => apiStatus.textContent = '', 2000);
     });
 </script>
 </body>
