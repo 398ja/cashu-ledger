@@ -64,8 +64,7 @@ public class ProxyController {
     @GetMapping("/vouchers")
     public ResponseEntity<byte[]> proxySearch(HttpServletRequest request) {
         String query = request.getQueryString();
-        String path = "/vouchers" + (query == null ? "" : "?" + query);
-        return forward(path, null);
+        return forwardWithQuery("/vouchers", query);
     }
 
     @GetMapping(value = "/watch/{id}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -76,6 +75,9 @@ public class ProxyController {
             connection.setConnectTimeout((int) Duration.ofSeconds(10).toMillis());
             connection.setReadTimeout((int) Duration.ofSeconds(20).toMillis());
             connection.setRequestProperty(HttpHeaders.ACCEPT, MediaType.TEXT_EVENT_STREAM_VALUE);
+            if (properties.getApiKey() != null && !properties.getApiKey().isBlank()) {
+                connection.setRequestProperty("X-API-Key", properties.getApiKey());
+            }
             try (InputStream in = connection.getInputStream()) {
                 byte[] buffer = new byte[STREAM_BUFFER];
                 int len;
@@ -92,8 +94,18 @@ public class ProxyController {
 
     private ResponseEntity<byte[]> forward(String path, MultiValueMap<String, String> params) {
         String url = buildUrl(path, params);
+        return executeForward(url);
+    }
+
+    private ResponseEntity<byte[]> forwardWithQuery(String path, String queryString) {
+        String url = buildUrlWithQuery(path, queryString);
+        return executeForward(url);
+    }
+
+    private ResponseEntity<byte[]> executeForward(String url) {
         HttpHeaders headers = new HttpHeaders();
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+        addApiKeyIfConfigured(headers);
         ResponseEntity<byte[]> response = restTemplate.exchange(
                 url,
                 HttpMethod.GET,
@@ -118,7 +130,22 @@ public class ProxyController {
                 .toString();
     }
 
+    private String buildUrlWithQuery(String path, String queryString) {
+        String base = properties.getApiBase() + path;
+        if (queryString != null && !queryString.isEmpty()) {
+            return base + "?" + queryString;
+        }
+        return base;
+    }
+
     private String encode(String value) {
         return UriComponentsBuilder.newInstance().pathSegment(value).build().getPathSegments().get(0);
+    }
+
+    private void addApiKeyIfConfigured(HttpHeaders headers) {
+        String apiKey = properties.getApiKey();
+        if (apiKey != null && !apiKey.isBlank()) {
+            headers.set("X-API-Key", apiKey);
+        }
     }
 }
