@@ -54,7 +54,7 @@
                 <artifactId>jib-maven-plugin</artifactId>
                 <configuration>
                     <from>
-                        <image>eclipse-temurin:21-jre-alpine</image>
+                        <image>eclipse-temurin:21-jre</image>
                     </from>
                     <to>
                         <image>docker.398ja.xyz/cashu-ledger-web</image>
@@ -67,13 +67,20 @@
                         <ports>
                             <port>6060</port>
                         </ports>
-                        <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
-                        <environment>
-                            <SPRING_PROFILES_ACTIVE>default</SPRING_PROFILES_ACTIVE>
-                        </environment>
+                        <jvmFlags>
+                            <jvmFlag>-Xms256m</jvmFlag>
+                            <jvmFlag>-Xmx512m</jvmFlag>
+                        </jvmFlags>
                     </container>
-                    <allowInsecureRegistries>true</allowInsecureRegistries>
                 </configuration>
+                <executions>
+                    <execution>
+                        <phase>deploy</phase>
+                        <goals>
+                            <goal>build</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
