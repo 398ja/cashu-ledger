@@ -24,7 +24,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <nostr-java.version>1.2.0</nostr-java.version>
-        <cashu-voucher.version>0.3.6</cashu-voucher.version>
+        <cashu-voucher.version>0.3.7</cashu-voucher.version>
         <picocli.version>4.7.6</picocli.version>
         <slf4j.version>2.0.17</slf4j.version>
         <logback.version>1.5.18</logback.version>
