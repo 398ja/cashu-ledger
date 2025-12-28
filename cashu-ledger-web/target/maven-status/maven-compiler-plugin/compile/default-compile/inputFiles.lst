@@ -1,0 +1,8 @@
+/home/eric/IdeaProjects/cashu-ledger/cashu-ledger-web/src/main/java/xyz/tcheeric/cashu/ledger/web/CashuLedgerWebApplication.java
+/home/eric/IdeaProjects/cashu-ledger/cashu-ledger-web/src/main/java/xyz/tcheeric/cashu/ledger/web/config/SecurityConfig.java
+/home/eric/IdeaProjects/cashu-ledger/cashu-ledger-web/src/main/java/xyz/tcheeric/cashu/ledger/web/config/WebConfig.java
+/home/eric/IdeaProjects/cashu-ledger/cashu-ledger-web/src/main/java/xyz/tcheeric/cashu/ledger/web/config/WebLedgerProperties.java
+/home/eric/IdeaProjects/cashu-ledger/cashu-ledger-web/src/main/java/xyz/tcheeric/cashu/ledger/web/controller/ProxyController.java
+/home/eric/IdeaProjects/cashu-ledger/cashu-ledger-web/src/main/java/xyz/tcheeric/cashu/ledger/web/controller/UnclaimedController.java
+/home/eric/IdeaProjects/cashu-ledger/cashu-ledger-web/src/main/java/xyz/tcheeric/cashu/ledger/web/controller/VoucherController.java
+/home/eric/IdeaProjects/cashu-ledger/cashu-ledger-web/src/main/java/xyz/tcheeric/cashu/ledger/web/controller/WatchController.java

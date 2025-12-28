@@ -25,6 +25,8 @@ import java.util.Optional;
  */
 public class VoucherEventMapper {
 
+    private static final String D_TAG_PREFIX = "voucher:";
+
     public Optional<VoucherNode> toVoucher(GenericEvent event, String relayUrl) {
         if (event == null || event.getTags() == null) {
             return Optional.empty();
@@ -116,7 +118,7 @@ public class VoucherEventMapper {
             values.rawTags.add(rawList);
 
             switch (code) {
-                case "d" -> values.voucherId = attributeValue(attributes, 0);
+                case "d" -> values.voucherId = stripDTagPrefix(attributeValue(attributes, 0));
                 case "status" -> values.status = VoucherStatus.fromValue(attributeValue(attributes, 0, "unknown"));
                 case "previous_status" -> values.previousStatus = VoucherStatus.fromValue(attributeValue(attributes, 0, "unknown"));
                 case "state_version" -> values.stateVersion = parseLong(attributeValue(attributes, 0), 0L);
@@ -224,6 +226,17 @@ public class VoucherEventMapper {
             return null;
         }
         return signature.toString();
+    }
+
+    private String stripDTagPrefix(String dTagValue) {
+        if (dTagValue == null) {
+            return null;
+        }
+        if (dTagValue.startsWith(D_TAG_PREFIX)) {
+            return dTagValue.substring(D_TAG_PREFIX.length());
+        }
+        // Return as-is if no prefix (for backward compatibility)
+        return dTagValue;
     }
 
     private static final class TagValues {

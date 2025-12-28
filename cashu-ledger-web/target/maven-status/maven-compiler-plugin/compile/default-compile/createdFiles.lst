@@ -1,0 +1,8 @@
+xyz/tcheeric/cashu/ledger/web/config/SecurityConfig.class
+xyz/tcheeric/cashu/ledger/web/CashuLedgerWebApplication.class
+xyz/tcheeric/cashu/ledger/web/config/WebLedgerProperties.class
+xyz/tcheeric/cashu/ledger/web/controller/WatchController.class
+xyz/tcheeric/cashu/ledger/web/controller/UnclaimedController.class
+xyz/tcheeric/cashu/ledger/web/controller/VoucherController.class
+xyz/tcheeric/cashu/ledger/web/config/WebConfig.class
+xyz/tcheeric/cashu/ledger/web/controller/ProxyController.class

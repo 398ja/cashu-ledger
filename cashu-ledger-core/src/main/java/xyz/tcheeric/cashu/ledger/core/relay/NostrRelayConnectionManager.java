@@ -40,6 +40,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
 
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
     private static final int VOUCHER_KIND = 30078;
+    private static final String D_TAG_PREFIX = "voucher:";
 
     private final ConcurrentHashMap<String, ClientContext> clients = new ConcurrentHashMap<>();
     private List<String> relayUrls = List.of();
@@ -301,7 +302,9 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
     private Filters buildFilters(String voucherId) {
         List<Filterable> filterables = new ArrayList<>();
         filterables.add(new KindFilter<>(nostr.base.Kind.valueOf(VOUCHER_KIND)));
-        filterables.add(new IdentifierTagFilter<>(new nostr.event.tag.IdentifierTag(voucherId)));
+        // Add prefix to voucherId to match d-tag format: "voucher:<voucherId>"
+        String dTagValue = voucherId.startsWith(D_TAG_PREFIX) ? voucherId : D_TAG_PREFIX + voucherId;
+        filterables.add(new IdentifierTagFilter<>(new nostr.event.tag.IdentifierTag(dTagValue)));
         Filters filters = new Filters(filterables);
         filters.setLimit(1);
         return filters;
@@ -368,11 +371,13 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
                 List<BaseTag> tags = new ArrayList<>();
                 for (JsonNode tagArray : eventNode.get("tags")) {
                     if (tagArray.isArray() && tagArray.size() > 0) {
+                        String tagCode = tagArray.get(0).asText();
                         List<nostr.base.ElementAttribute> attrs = new ArrayList<>();
-                        for (JsonNode element : tagArray) {
-                            attrs.add(new nostr.base.ElementAttribute(null, element.asText()));
+                        // Start from index 1 - index 0 is the tag code, not an attribute
+                        for (int i = 1; i < tagArray.size(); i++) {
+                            attrs.add(new nostr.base.ElementAttribute(null, tagArray.get(i).asText()));
                         }
-                        tags.add(new GenericTag(tagArray.get(0).asText(), attrs));
+                        tags.add(new GenericTag(tagCode, attrs));
                     }
                 }
                 event.setTags(tags);

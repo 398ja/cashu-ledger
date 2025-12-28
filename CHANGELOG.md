@@ -4,6 +4,10 @@ All notable changes to this project are documented here. This project follows Co
 
 ## [Unreleased]
 
+### Changed
+
+- Updated cashu-voucher dependency from 0.3.6 to 0.3.7
+
 ### Added
 - Initial project structure for cashu-ledger (core + CLI modules)
 - Relay connection manager backed by nostr-java clients
