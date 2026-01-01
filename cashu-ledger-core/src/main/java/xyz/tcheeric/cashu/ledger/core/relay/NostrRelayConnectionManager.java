@@ -66,14 +66,28 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         }
 
         for (String relayUrl : relayUrls) {
-            ClientContext context = clients.computeIfAbsent(relayUrl, this::createClient);
             try {
+                ClientContext context = getOrReconnectClient(relayUrl);
                 Optional<GenericEvent> event = querySingleRelay(context.client(), relayUrl, voucherId);
                 if (event.isPresent()) {
                     return Optional.of(new RelayEvent(event.get(), relayUrl));
                 }
             } catch (Exception e) {
-                log.warn("relay_query failed relay={} voucherId={} error={}", relayUrl, voucherId, e.getMessage());
+                if (isClosedSessionError(e)) {
+                    log.info("relay_connection_closed relay={} reconnecting", relayUrl);
+                    clients.remove(relayUrl);
+                    try {
+                        ClientContext newContext = getOrReconnectClient(relayUrl);
+                        Optional<GenericEvent> event = querySingleRelay(newContext.client(), relayUrl, voucherId);
+                        if (event.isPresent()) {
+                            return Optional.of(new RelayEvent(event.get(), relayUrl));
+                        }
+                    } catch (Exception retryEx) {
+                        log.warn("relay_query_retry_failed relay={} voucherId={} error={}", relayUrl, voucherId, retryEx.getMessage());
+                    }
+                } else {
+                    log.warn("relay_query failed relay={} voucherId={} error={}", relayUrl, voucherId, e.getMessage());
+                }
             }
         }
 
@@ -90,19 +104,35 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         List<RelayEvent> results = new ArrayList<>();
         Set<String> seenIds = new HashSet<>();
         for (String relayUrl : relayUrls) {
-            ClientContext context = clients.computeIfAbsent(relayUrl, this::createClient);
             try {
-                queryChildrenForRelay(context.client(), relayUrl, parentVoucherId, limit)
-                        .forEach(event -> {
-                            if (event.event().getId() != null && seenIds.add(event.event().getId())) {
-                                results.add(event);
-                            }
-                        });
+                ClientContext context = getOrReconnectClient(relayUrl);
+                queryChildrenWithReconnect(context, relayUrl, parentVoucherId, limit, seenIds, results);
             } catch (Exception e) {
-                log.warn("relay_child_query_failed relay={} parentId={} error={}", relayUrl, parentVoucherId, e.getMessage());
+                if (isClosedSessionError(e)) {
+                    log.info("relay_connection_closed relay={} reconnecting", relayUrl);
+                    clients.remove(relayUrl);
+                    try {
+                        ClientContext newContext = getOrReconnectClient(relayUrl);
+                        queryChildrenWithReconnect(newContext, relayUrl, parentVoucherId, limit, seenIds, results);
+                    } catch (Exception retryEx) {
+                        log.warn("relay_child_query_retry_failed relay={} parentId={} error={}", relayUrl, parentVoucherId, retryEx.getMessage());
+                    }
+                } else {
+                    log.warn("relay_child_query_failed relay={} parentId={} error={}", relayUrl, parentVoucherId, e.getMessage());
+                }
             }
         }
         return results;
+    }
+
+    private void queryChildrenWithReconnect(ClientContext context, String relayUrl, String parentVoucherId, int limit, Set<String> seenIds, List<RelayEvent> results)
+            throws InterruptedException, IOException {
+        queryChildrenForRelay(context.client(), relayUrl, parentVoucherId, limit)
+                .forEach(event -> {
+                    if (event.event().getId() != null && seenIds.add(event.event().getId())) {
+                        results.add(event);
+                    }
+                });
     }
 
     @Override
@@ -113,19 +143,35 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         Set<String> seenIds = new HashSet<>();
 
         for (String relayUrl : relayUrls) {
-            ClientContext context = clients.computeIfAbsent(relayUrl, this::createClient);
             try {
-                queryVoucherEventsForRelay(context.client(), relayUrl, voucherId, effectiveLimit)
-                        .forEach(event -> {
-                            if (event.event().getId() != null && seenIds.add(event.event().getId())) {
-                                results.add(event);
-                            }
-                        });
+                ClientContext context = getOrReconnectClient(relayUrl);
+                queryVoucherEventsWithReconnect(context, relayUrl, voucherId, effectiveLimit, seenIds, results);
             } catch (Exception e) {
-                log.warn("relay_history_query_failed relay={} voucherId={} error={}", relayUrl, voucherId, e.getMessage());
+                if (isClosedSessionError(e)) {
+                    log.info("relay_connection_closed relay={} reconnecting", relayUrl);
+                    clients.remove(relayUrl);
+                    try {
+                        ClientContext newContext = getOrReconnectClient(relayUrl);
+                        queryVoucherEventsWithReconnect(newContext, relayUrl, voucherId, effectiveLimit, seenIds, results);
+                    } catch (Exception retryEx) {
+                        log.warn("relay_history_query_retry_failed relay={} voucherId={} error={}", relayUrl, voucherId, retryEx.getMessage());
+                    }
+                } else {
+                    log.warn("relay_history_query_failed relay={} voucherId={} error={}", relayUrl, voucherId, e.getMessage());
+                }
             }
         }
         return results;
+    }
+
+    private void queryVoucherEventsWithReconnect(ClientContext context, String relayUrl, String voucherId, int limit, Set<String> seenIds, List<RelayEvent> results)
+            throws InterruptedException, IOException {
+        queryVoucherEventsForRelay(context.client(), relayUrl, voucherId, limit)
+                .forEach(event -> {
+                    if (event.event().getId() != null && seenIds.add(event.event().getId())) {
+                        results.add(event);
+                    }
+                });
     }
 
     @Override
@@ -135,19 +181,61 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         Set<String> seenIds = new HashSet<>();
 
         for (String relayUrl : relayUrls) {
-            ClientContext context = clients.computeIfAbsent(relayUrl, this::createClient);
             try {
-                queryAllVouchersForRelay(context.client(), relayUrl, effectiveLimit)
-                        .forEach(event -> {
-                            if (event.event().getId() != null && seenIds.add(event.event().getId())) {
-                                results.add(event);
-                            }
-                        });
+                ClientContext context = getOrReconnectClient(relayUrl);
+                querySearchVouchersWithReconnect(context, relayUrl, effectiveLimit, seenIds, results);
             } catch (Exception e) {
-                log.warn("relay_search_query_failed relay={} error={}", relayUrl, e.getMessage());
+                if (isClosedSessionError(e)) {
+                    log.info("relay_connection_closed relay={} reconnecting", relayUrl);
+                    clients.remove(relayUrl);
+                    try {
+                        ClientContext newContext = getOrReconnectClient(relayUrl);
+                        querySearchVouchersWithReconnect(newContext, relayUrl, effectiveLimit, seenIds, results);
+                    } catch (Exception retryEx) {
+                        log.warn("relay_search_query_retry_failed relay={} error={}", relayUrl, retryEx.getMessage());
+                    }
+                } else {
+                    log.warn("relay_search_query_failed relay={} error={}", relayUrl, e.getMessage());
+                }
             }
         }
         return results;
+    }
+
+    private void querySearchVouchersWithReconnect(ClientContext context, String relayUrl, int limit, Set<String> seenIds, List<RelayEvent> results)
+            throws InterruptedException, IOException {
+        queryAllVouchersForRelay(context.client(), relayUrl, limit)
+                .forEach(event -> {
+                    if (event.event().getId() != null && seenIds.add(event.event().getId())) {
+                        results.add(event);
+                    }
+                });
+    }
+
+    /**
+     * Gets an existing client or creates a new one if not present.
+     */
+    private ClientContext getOrReconnectClient(String relayUrl) {
+        return clients.computeIfAbsent(relayUrl, this::createClient);
+    }
+
+    /**
+     * Checks if the exception indicates a closed WebSocket session.
+     */
+    private boolean isClosedSessionError(Exception e) {
+        String message = e.getMessage();
+        if (message != null && message.contains("WebSocket session is closed")) {
+            return true;
+        }
+        Throwable cause = e.getCause();
+        while (cause != null) {
+            String causeMsg = cause.getMessage();
+            if (causeMsg != null && causeMsg.contains("WebSocket session is closed")) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     @Override
