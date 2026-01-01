@@ -109,6 +109,11 @@
                 <artifactId>logback-classic</artifactId>
                 <version>${logback.version}</version>
             </dependency>
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-core</artifactId>
+                <version>${logback.version}</version>
+            </dependency>
             <!-- jackson-databind version managed by Spring Boot BOM -->
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
