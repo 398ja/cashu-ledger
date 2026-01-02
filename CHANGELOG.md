@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [0.2.1] - 2026-01-02
+
+### Fixed
+
+- **Event Serialization** - Convert GenericEvent to serializable map structure to avoid Jackson NPE with nostr-java objects
+- **Web Module Dependency** - Include nostrdb-jni dependency in web module for persistent caching support
+- **Serialization Logging** - Reduce serialization failure log level from ERROR to WARN (recoverable operation)
+- **Resource Management** - Add `@SuppressWarnings("resource")` for intentionally pooled ClientContext connections
+- **CI Test Compatibility** - Skip nostrdb tests in CI environments where LMDB memory allocation fails
+  - Add class-level `@EnabledIf` to prevent `@BeforeEach` from running before condition check
+  - Affects: `NostrDbEventStoreTest`, `StorageIntegrationTest`, `StorageCachingE2ETest`
+- **Docker Port** - Correct health check port from 8080 to 6060 in Dockerfile
+- **Build Configuration** - Add missing lombok version in annotationProcessorPaths
+- **Tag Serialization** - Handle all BaseTag types with reflection fallback, not just GenericTag
+- **JVM Memory Config** - Remove conflicting fixed heap flags (-Xms/-Xmx) in favor of percentage-based sizing for containers
+- **NIP-01 Validation** - Use nostr-java's built-in `event.validate()` for NIP-01 compliance with warning logs
+
+### Changed
+
+- Added Maven wrapper (mvnw) for consistent builds across environments
+
 ## [0.2.0] - 2026-01-02
 
 ### Added
