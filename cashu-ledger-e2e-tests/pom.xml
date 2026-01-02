@@ -17,6 +17,12 @@
     <dependencies>
         <dependency>
             <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-ledger-core</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
             <artifactId>cashu-ledger-cli</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
