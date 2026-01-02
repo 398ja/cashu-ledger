@@ -530,11 +530,11 @@ void shouldReturnCachedEventOnSubsequentFetch() {
 
 - [x] nostrdb-jni dependency integrated into cashu-ledger-core (commit: be941a7)
 - [x] EventStore interface and NostrDbEventStore implementation complete (commit: be941a7)
-- [x] CachingRelayConnectionManager decorator working (commit: 22aa9f3)
-- [ ] Configuration properties for Web and CLI modules
+- [x] CachingRelayConnectionManager decorator working (commit: c9be558)
+- [x] Configuration properties for Web and CLI modules (commit: 080613b)
+- [x] Unit tests for all new classes (commits: be941a7, c9be558)
+- [x] Graceful fallback when native library unavailable (commit: be941a7)
 - [ ] Cache warm queries < 1ms (measured)
 - [ ] Tree traversal with warm cache < 10ms for depth 5
-- [ ] Graceful fallback when native library unavailable
-- [ ] Unit tests for all new classes
 - [ ] Integration test for full round-trip caching
 - [ ] Documentation updated
