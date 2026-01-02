@@ -535,9 +535,9 @@ void shouldReturnCachedEventOnSubsequentFetch() {
 - [x] Unit tests for all new classes (commits: be941a7, c9be558, 9b59b6e)
 - [x] Graceful fallback when native library unavailable (commit: be941a7)
 - [x] Batch fetch and BFS tree traversal optimization (commit: 9b59b6e)
-- [x] Cache warm queries < 10ms (measured in StorageIntegrationTest)
-- [x] Integration test for full round-trip caching (StorageIntegrationTest)
-- [x] Documentation updated (docs/design/nostrdb-storage-usage.md)
+- [x] Cache warm queries < 10ms (measured in StorageIntegrationTest, commit: eeeebdb)
+- [x] Integration test for full round-trip caching (StorageIntegrationTest, commit: eeeebdb)
+- [x] Documentation updated (docs/design/nostrdb-storage-usage.md, commit: eeeebdb)
 
 ## 13. Implementation Complete
 
