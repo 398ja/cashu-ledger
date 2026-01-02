@@ -532,8 +532,9 @@ void shouldReturnCachedEventOnSubsequentFetch() {
 - [x] EventStore interface and NostrDbEventStore implementation complete (commit: be941a7)
 - [x] CachingRelayConnectionManager decorator working (commit: c9be558)
 - [x] Configuration properties for Web and CLI modules (commit: 080613b)
-- [x] Unit tests for all new classes (commits: be941a7, c9be558)
+- [x] Unit tests for all new classes (commits: be941a7, c9be558, 9b59b6e)
 - [x] Graceful fallback when native library unavailable (commit: be941a7)
+- [x] Batch fetch and BFS tree traversal optimization (commit: 9b59b6e)
 - [ ] Cache warm queries < 1ms (measured)
 - [ ] Tree traversal with warm cache < 10ms for depth 5
 - [ ] Integration test for full round-trip caching
