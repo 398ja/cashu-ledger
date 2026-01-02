@@ -447,7 +447,13 @@ ndb.processEvent(eventJson);
 |------------|----------|
 | `StorageIntegrationTest` | Full round-trip, tree traversal performance, concurrent access |
 
-### 8.3 Test Patterns
+### 8.3 End-to-End Tests
+
+| Test Class | Coverage |
+|------------|----------|
+| `StorageCachingE2ETest` | Full service flow with caching, tree building, history, search, relay fallback, concurrent access |
+
+### 8.4 Test Patterns
 
 ```java
 @Test
@@ -537,6 +543,7 @@ void shouldReturnCachedEventOnSubsequentFetch() {
 - [x] Batch fetch and BFS tree traversal optimization (commit: 9b59b6e)
 - [x] Cache warm queries < 10ms (measured in StorageIntegrationTest, commit: eeeebdb)
 - [x] Integration test for full round-trip caching (StorageIntegrationTest, commit: eeeebdb)
+- [x] E2E tests for full service flow (StorageCachingE2ETest, commit: a1d70fa)
 - [x] Documentation updated (docs/design/nostrdb-storage-usage.md, commit: eeeebdb)
 
 ## 13. Implementation Complete
