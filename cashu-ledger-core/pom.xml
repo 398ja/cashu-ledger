@@ -52,6 +52,13 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <!-- Local event storage (optional) -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>nostrdb-jni</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

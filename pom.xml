@@ -24,6 +24,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <nostr-java.version>1.2.0</nostr-java.version>
+        <nostrdb-jni.version>0.1.0-SNAPSHOT</nostrdb-jni.version>
         <cashu-voucher.version>0.3.7</cashu-voucher.version>
         <picocli.version>4.7.6</picocli.version>
         <slf4j.version>2.0.17</slf4j.version>
@@ -83,6 +84,11 @@
                 <groupId>xyz.tcheeric</groupId>
                 <artifactId>nostr-java-api</artifactId>
                 <version>${nostr-java.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>xyz.tcheeric</groupId>
+                <artifactId>nostrdb-jni</artifactId>
+                <version>${nostrdb-jni.version}</version>
             </dependency>
             <dependency>
                 <groupId>xyz.tcheeric</groupId>
