@@ -28,6 +28,19 @@ public interface RelayConnectionManager extends AutoCloseable {
     Optional<RelayEvent> fetchVoucher(String voucherId);
 
     /**
+     * Fetches multiple voucher events by their IDs in a batch operation.
+     *
+     * <p>This method is optimized for fetching multiple vouchers at once,
+     * reducing round-trip latency compared to individual fetchVoucher calls.
+     * Results are returned for all vouchers that are found; missing vouchers
+     * are simply not included in the result list.
+     *
+     * @param voucherIds collection of voucher identifiers to fetch
+     * @return list of events found across relays
+     */
+    List<RelayEvent> fetchVouchersBatch(java.util.Collection<String> voucherIds);
+
+    /**
      * Fetches child vouchers that reference the given parent voucher ID.
      *
      * @param parentVoucherId parent voucher identifier

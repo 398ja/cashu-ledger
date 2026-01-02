@@ -145,6 +145,16 @@ class VoucherLedgerHistoryAndSearchTest {
         }
 
         @Override
+        public List<RelayEvent> fetchVouchersBatch(java.util.Collection<String> voucherIds) {
+            return events.stream()
+                    .filter(evt -> evt.getTags().stream().anyMatch(tag -> tag instanceof GenericTag g
+                            && "d".equals(g.getCode())
+                            && voucherIds.contains(g.getAttributes().getFirst().value())))
+                    .map(evt -> new RelayEvent(evt, "wss://relay.test"))
+                    .toList();
+        }
+
+        @Override
         public List<RelayEvent> searchChildren(String parentVoucherId, int limit) {
             return List.of();
         }

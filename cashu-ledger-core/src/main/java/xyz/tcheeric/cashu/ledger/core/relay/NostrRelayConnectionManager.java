@@ -95,6 +95,131 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
     }
 
     @Override
+    public List<RelayEvent> fetchVouchersBatch(java.util.Collection<String> voucherIds) {
+        if (voucherIds == null || voucherIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<RelayEvent> results = new ArrayList<>();
+        Set<String> seenEventIds = new HashSet<>();
+        Set<String> remainingIds = new HashSet<>(voucherIds);
+
+        for (String relayUrl : relayUrls) {
+            if (remainingIds.isEmpty()) {
+                break;
+            }
+
+            try {
+                ClientContext context = getOrReconnectClient(relayUrl);
+                List<RelayEvent> relayResults = queryBatchForRelay(context.client(), relayUrl, remainingIds);
+                for (RelayEvent event : relayResults) {
+                    if (event.event().getId() != null && seenEventIds.add(event.event().getId())) {
+                        results.add(event);
+                        // Extract voucher ID from d-tag and remove from remaining
+                        extractVoucherId(event.event()).ifPresent(remainingIds::remove);
+                    }
+                }
+            } catch (Exception e) {
+                if (isClosedSessionError(e)) {
+                    log.info("relay_connection_closed relay={} reconnecting", relayUrl);
+                    clients.remove(relayUrl);
+                    try {
+                        ClientContext newContext = getOrReconnectClient(relayUrl);
+                        List<RelayEvent> relayResults = queryBatchForRelay(newContext.client(), relayUrl, remainingIds);
+                        for (RelayEvent event : relayResults) {
+                            if (event.event().getId() != null && seenEventIds.add(event.event().getId())) {
+                                results.add(event);
+                                extractVoucherId(event.event()).ifPresent(remainingIds::remove);
+                            }
+                        }
+                    } catch (Exception retryEx) {
+                        log.warn("relay_batch_query_retry_failed relay={} error={}", relayUrl, retryEx.getMessage());
+                    }
+                } else {
+                    log.warn("relay_batch_query_failed relay={} error={}", relayUrl, e.getMessage());
+                }
+            }
+        }
+
+        log.debug("batch_fetch_complete requested={} found={}", voucherIds.size(), results.size());
+        return results;
+    }
+
+    private List<RelayEvent> queryBatchForRelay(
+            SpringWebSocketClient client,
+            String relayUrl,
+            Set<String> voucherIds
+    ) throws InterruptedException, IOException {
+        String subscriptionId = "batch-" + UUID.randomUUID().toString().substring(0, 8);
+        CountDownLatch eoseLatch = new CountDownLatch(1);
+        List<RelayEvent> found = new ArrayList<>();
+
+        // Build filter with multiple d-tags
+        Filters filters = buildBatchFilters(voucherIds);
+        ReqMessage reqMessage = new ReqMessage(subscriptionId, List.of(filters));
+
+        client.subscribe(
+                reqMessage,
+                message -> {
+                    GenericEvent event = parseEventFromJson(message);
+                    if (event != null) {
+                        found.add(new RelayEvent(event, relayUrl));
+                    } else if (message.contains("\"EOSE\"")) {
+                        eoseLatch.countDown();
+                    }
+                },
+                error -> {
+                    log.warn("relay_batch_query_error relay={} subscription={} error={}",
+                            relayUrl, subscriptionId, error.getMessage());
+                    eoseLatch.countDown();
+                },
+                eoseLatch::countDown
+        );
+
+        eoseLatch.await(queryTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        client.send(new CloseMessage(subscriptionId));
+        return found;
+    }
+
+    private Filters buildBatchFilters(Set<String> voucherIds) {
+        List<Filterable> filterables = new ArrayList<>();
+        filterables.add(new KindFilter<>(nostr.base.Kind.valueOf(VOUCHER_KIND)));
+
+        // Add multiple d-tag filters - Nostr protocol supports OR within a single filter
+        for (String voucherId : voucherIds) {
+            String dTagValue = voucherId.startsWith(D_TAG_PREFIX) ? voucherId : D_TAG_PREFIX + voucherId;
+            filterables.add(new IdentifierTagFilter<>(new nostr.event.tag.IdentifierTag(dTagValue)));
+        }
+
+        Filters filters = new Filters(filterables);
+        filters.setLimit(voucherIds.size());
+        return filters;
+    }
+
+    private Optional<String> extractVoucherId(GenericEvent event) {
+        if (event.getTags() == null) {
+            return Optional.empty();
+        }
+        for (BaseTag tag : event.getTags()) {
+            if (tag instanceof GenericTag genericTag && "d".equals(genericTag.getCode())) {
+                List<ElementAttribute> attrs = genericTag.getAttributes();
+                if (attrs != null && !attrs.isEmpty()) {
+                    Object val = attrs.getFirst().value();
+                    if (val != null) {
+                        String dTag = val.toString();
+                        // Remove the prefix if present
+                        if (dTag.startsWith(D_TAG_PREFIX)) {
+                            return Optional.of(dTag.substring(D_TAG_PREFIX.length()));
+                        }
+                        return Optional.of(dTag);
+                    }
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    @Override
     public List<RelayEvent> searchChildren(String parentVoucherId, int limit) {
         Objects.requireNonNull(parentVoucherId, "parentVoucherId");
         if (parentVoucherId.isBlank()) {

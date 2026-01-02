@@ -8,8 +8,11 @@ import xyz.tcheeric.cashu.ledger.core.storage.StoredEvent;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -86,6 +89,50 @@ public class CachingRelayConnectionManager implements RelayConnectionManager {
         }
 
         return relayResult;
+    }
+
+    @Override
+    public List<RelayEvent> fetchVouchersBatch(Collection<String> voucherIds) {
+        if (voucherIds == null || voucherIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<RelayEvent> results = new ArrayList<>();
+        Set<String> missingIds = new HashSet<>();
+
+        if (cacheEnabled) {
+            // Check cache first for all IDs
+            Map<String, RelayEvent> cachedEvents = new HashMap<>();
+            for (String voucherId : voucherIds) {
+                Optional<StoredEvent> cached = eventStore.findLatestByVoucherId(voucherId);
+                if (cached.isPresent()) {
+                    cachedEvents.put(voucherId, toRelayEvent(cached.get()));
+                } else {
+                    missingIds.add(voucherId);
+                }
+            }
+
+            results.addAll(cachedEvents.values());
+            LOGGER.debug("batch_cache_lookup total={} cached={} missing={}",
+                    voucherIds.size(), cachedEvents.size(), missingIds.size());
+
+            // If all found in cache, return early
+            if (missingIds.isEmpty()) {
+                return results;
+            }
+        } else {
+            missingIds.addAll(voucherIds);
+        }
+
+        // Fetch missing from relay
+        List<RelayEvent> relayResults = delegate.fetchVouchersBatch(missingIds);
+
+        if (cacheEnabled) {
+            storeEvents(relayResults);
+        }
+
+        results.addAll(relayResults);
+        return results;
     }
 
     @Override

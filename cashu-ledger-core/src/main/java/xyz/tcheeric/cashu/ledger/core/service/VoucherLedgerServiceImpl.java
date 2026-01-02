@@ -338,55 +338,129 @@ public class VoucherLedgerServiceImpl implements VoucherLedgerService {
         return data;
     }
 
+    /**
+     * Traverses up the voucher tree using BFS with batch prefetching.
+     *
+     * <p>Collects parent IDs at each level and fetches them in batch,
+     * reducing round-trip latency compared to individual fetches.
+     */
     private void traverseUp(VoucherNode node, Map<String, VoucherNode> nodes, int remainingDepth) {
         if (remainingDepth <= 0 || node.parentContributions() == null) {
             return;
         }
-        node.parentContributions().forEach(parent -> {
+
+        // BFS with batch prefetching at each level
+        Set<String> currentLevel = new HashSet<>();
+        for (var parent : node.parentContributions()) {
             if (!nodes.containsKey(parent.parentVoucherId())) {
-                Optional<RelayConnectionManager.RelayEvent> relayEvent =
-                        relayConnectionManager.fetchVoucher(parent.parentVoucherId());
-                relayEvent.flatMap(re -> mapper.toVoucher(re.event(), re.relayUrl()))
-                        .ifPresent(parentNode -> {
-                            voucherCache.put(parentNode.voucherId(), CacheEntry.of(parentNode, cacheTtl));
-                            nodes.put(parentNode.voucherId(), parentNode);
-                            traverseUp(parentNode, nodes, remainingDepth - 1);
-                        });
+                currentLevel.add(parent.parentVoucherId());
             }
-        });
+        }
+
+        int depth = remainingDepth;
+        while (!currentLevel.isEmpty() && depth > 0) {
+            // Batch fetch all parents at current level
+            List<RelayConnectionManager.RelayEvent> batchResults =
+                    relayConnectionManager.fetchVouchersBatch(currentLevel);
+
+            Set<String> nextLevel = new HashSet<>();
+            for (RelayConnectionManager.RelayEvent relayEvent : batchResults) {
+                Optional<VoucherNode> parentNodeOpt = mapper.toVoucher(relayEvent.event(), relayEvent.relayUrl());
+                if (parentNodeOpt.isPresent()) {
+                    VoucherNode parentNode = parentNodeOpt.get();
+                    voucherCache.put(parentNode.voucherId(), CacheEntry.of(parentNode, cacheTtl));
+                    nodes.put(parentNode.voucherId(), parentNode);
+
+                    // Collect next level parents
+                    if (parentNode.parentContributions() != null) {
+                        for (var grandParent : parentNode.parentContributions()) {
+                            if (!nodes.containsKey(grandParent.parentVoucherId())) {
+                                nextLevel.add(grandParent.parentVoucherId());
+                            }
+                        }
+                    }
+                }
+            }
+
+            currentLevel = nextLevel;
+            depth--;
+        }
     }
 
+    /**
+     * Traverses down the voucher tree using BFS with batch prefetching.
+     *
+     * <p>Uses a level-by-level approach that:
+     * 1. Searches for children via relay at each level
+     * 2. Collects explicit splitInto references
+     * 3. Batch fetches any missing split children
+     * This reduces round-trip latency compared to individual fetches.
+     */
     private void traverseDown(VoucherNode node, Map<String, VoucherNode> nodes, int remainingDepth) {
         if (remainingDepth <= 0) {
             return;
         }
-        Set<String> discoveredChildIds = new HashSet<>();
-        List<RelayConnectionManager.RelayEvent> children = relayConnectionManager.searchChildren(node.voucherId(), 50);
-        for (RelayConnectionManager.RelayEvent childEvent : children) {
-            mapper.toVoucher(childEvent.event(), childEvent.relayUrl())
-                    .ifPresent(childNode -> {
+
+        // BFS with batch prefetching at each level
+        List<VoucherNode> currentLevel = new ArrayList<>();
+        currentLevel.add(node);
+
+        int depth = remainingDepth;
+        while (!currentLevel.isEmpty() && depth > 0) {
+            List<VoucherNode> nextLevel = new ArrayList<>();
+            Set<String> discoveredChildIds = new HashSet<>();
+            Set<String> splitChildIdsToFetch = new HashSet<>();
+
+            // Process each node at current level
+            for (VoucherNode currentNode : currentLevel) {
+                // Search for children via relay
+                List<RelayConnectionManager.RelayEvent> children =
+                        relayConnectionManager.searchChildren(currentNode.voucherId(), 50);
+
+                for (RelayConnectionManager.RelayEvent childEvent : children) {
+                    Optional<VoucherNode> childNodeOpt = mapper.toVoucher(childEvent.event(), childEvent.relayUrl());
+                    if (childNodeOpt.isPresent()) {
+                        VoucherNode childNode = childNodeOpt.get();
                         if (!nodes.containsKey(childNode.voucherId())) {
                             voucherCache.put(childNode.voucherId(), CacheEntry.of(childNode, cacheTtl));
                             nodes.put(childNode.voucherId(), childNode);
+                            nextLevel.add(childNode);
                         }
                         discoveredChildIds.add(childNode.voucherId());
-                        traverseDown(childNode, nodes, remainingDepth - 1);
-                    });
-        }
+                    }
+                }
 
-        List<String> splitChildren = node.stateMetadata() != null ? node.stateMetadata().splitInto() : List.of();
-        for (String splitChildId : splitChildren) {
-            if (nodes.containsKey(splitChildId) || discoveredChildIds.contains(splitChildId)) {
-                continue;
+                // Collect explicit splitInto children that need to be fetched
+                List<String> splitChildren = currentNode.stateMetadata() != null
+                        ? currentNode.stateMetadata().splitInto()
+                        : List.of();
+                for (String splitChildId : splitChildren) {
+                    if (!nodes.containsKey(splitChildId) && !discoveredChildIds.contains(splitChildId)) {
+                        splitChildIdsToFetch.add(splitChildId);
+                    }
+                }
             }
-            relayConnectionManager.fetchVoucher(splitChildId)
-                    .flatMap(re -> mapper.toVoucher(re.event(), re.relayUrl()))
-                    .ifPresent(splitChild -> {
-                        voucherCache.put(splitChild.voucherId(), CacheEntry.of(splitChild, cacheTtl));
-                        nodes.put(splitChild.voucherId(), splitChild);
-                        traverseDown(splitChild, nodes, remainingDepth - 1);
-                    });
-            discoveredChildIds.add(splitChildId);
+
+            // Batch fetch missing split children
+            if (!splitChildIdsToFetch.isEmpty()) {
+                List<RelayConnectionManager.RelayEvent> batchResults =
+                        relayConnectionManager.fetchVouchersBatch(splitChildIdsToFetch);
+
+                for (RelayConnectionManager.RelayEvent relayEvent : batchResults) {
+                    Optional<VoucherNode> splitChildOpt = mapper.toVoucher(relayEvent.event(), relayEvent.relayUrl());
+                    if (splitChildOpt.isPresent()) {
+                        VoucherNode splitChild = splitChildOpt.get();
+                        if (!nodes.containsKey(splitChild.voucherId())) {
+                            voucherCache.put(splitChild.voucherId(), CacheEntry.of(splitChild, cacheTtl));
+                            nodes.put(splitChild.voucherId(), splitChild);
+                            nextLevel.add(splitChild);
+                        }
+                    }
+                }
+            }
+
+            currentLevel = nextLevel;
+            depth--;
         }
     }
 

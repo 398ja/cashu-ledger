@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -325,6 +326,84 @@ class CachingRelayConnectionManagerTest {
         // Then: Still returns relay result despite cache failure
         assertThat(result).isPresent();
         assertThat(result.get().event()).isEqualTo(relayEvent);
+    }
+
+    /**
+     * Tests that fetchVouchersBatch returns all cached events on full cache hit.
+     */
+    @Test
+    void shouldReturnAllCachedEventsOnBatchCacheHit() {
+        // Given: All vouchers are in cache
+        GenericEvent event1 = createVoucherEventWithId("1".repeat(64));
+        GenericEvent event2 = createVoucherEventWithId("2".repeat(64));
+        when(eventStore.findLatestByVoucherId("voucher-1"))
+                .thenReturn(Optional.of(new StoredEvent(event1, TEST_RELAY, Instant.now())));
+        when(eventStore.findLatestByVoucherId("voucher-2"))
+                .thenReturn(Optional.of(new StoredEvent(event2, TEST_RELAY, Instant.now())));
+
+        // When: Batch fetching vouchers
+        List<RelayEvent> results = cachingManager.fetchVouchersBatch(List.of("voucher-1", "voucher-2"));
+
+        // Then: Returns cached events without querying relay
+        assertThat(results).hasSize(2);
+        verify(delegate, never()).fetchVouchersBatch(any());
+    }
+
+    /**
+     * Tests that fetchVouchersBatch queries relay for cache misses only.
+     */
+    @Test
+    void shouldQueryRelayForBatchCacheMissesOnly() {
+        // Given: One in cache, one not
+        GenericEvent cachedEvent = createVoucherEventWithId("1".repeat(64));
+        GenericEvent relayEvent = createVoucherEventWithId("2".repeat(64));
+        when(eventStore.findLatestByVoucherId("voucher-1"))
+                .thenReturn(Optional.of(new StoredEvent(cachedEvent, TEST_RELAY, Instant.now())));
+        when(eventStore.findLatestByVoucherId("voucher-2"))
+                .thenReturn(Optional.empty());
+        when(delegate.fetchVouchersBatch(Set.of("voucher-2")))
+                .thenReturn(List.of(new RelayEvent(relayEvent, TEST_RELAY)));
+
+        // When: Batch fetching vouchers
+        List<RelayEvent> results = cachingManager.fetchVouchersBatch(List.of("voucher-1", "voucher-2"));
+
+        // Then: Returns both cached and relay events
+        assertThat(results).hasSize(2);
+        verify(delegate).fetchVouchersBatch(Set.of("voucher-2"));
+        verify(eventStore).store(relayEvent, TEST_RELAY);
+    }
+
+    /**
+     * Tests that fetchVouchersBatch returns empty list for empty input.
+     */
+    @Test
+    void shouldReturnEmptyListForEmptyBatchInput() {
+        // When: Batch fetching with empty list
+        List<RelayEvent> results = cachingManager.fetchVouchersBatch(List.of());
+
+        // Then: Returns empty list
+        assertThat(results).isEmpty();
+        verify(delegate, never()).fetchVouchersBatch(any());
+    }
+
+    /**
+     * Tests that fetchVouchersBatch bypasses cache when disabled.
+     */
+    @Test
+    void shouldBypassCacheForBatchWhenDisabled() {
+        // Given: Caching disabled
+        CachingRelayConnectionManager disabledCache =
+                new CachingRelayConnectionManager(delegate, eventStore, false);
+        GenericEvent relayEvent = createVoucherEventWithId("1".repeat(64));
+        when(delegate.fetchVouchersBatch(Set.of("voucher-1")))
+                .thenReturn(List.of(new RelayEvent(relayEvent, TEST_RELAY)));
+
+        // When: Batch fetching
+        List<RelayEvent> results = disabledCache.fetchVouchersBatch(Set.of("voucher-1"));
+
+        // Then: Queries relay directly, no cache interaction
+        assertThat(results).hasSize(1);
+        verify(eventStore, never()).findLatestByVoucherId(anyString());
     }
 
     private GenericEvent createVoucherEvent(String voucherId) {

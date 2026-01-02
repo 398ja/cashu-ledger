@@ -150,6 +150,18 @@ class VoucherTreeBuilderTest {
         }
 
         @Override
+        public List<RelayEvent> fetchVouchersBatch(java.util.Collection<String> voucherIds) {
+            List<RelayEvent> results = new ArrayList<>();
+            for (String id : voucherIds) {
+                GenericEvent evt = events.get(id);
+                if (evt != null) {
+                    results.add(new RelayEvent(evt, "wss://relay.test"));
+                }
+            }
+            return results;
+        }
+
+        @Override
         public List<RelayEvent> searchChildren(String parentVoucherId, int limit) {
             List<RelayEvent> found = new ArrayList<>();
             events.forEach((id, evt) -> {

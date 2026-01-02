@@ -64,6 +64,11 @@ class VoucherLedgerServiceImplTest {
         }
 
         @Override
+        public List<RelayEvent> fetchVouchersBatch(java.util.Collection<String> voucherIds) {
+            return voucherIds.isEmpty() ? List.of() : List.of(new RelayEvent(event, "wss://relay.test"));
+        }
+
+        @Override
         public List<RelayEvent> searchChildren(String parentVoucherId, int limit) {
             return List.of();
         }
