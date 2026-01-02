@@ -17,7 +17,7 @@ A tool for inspecting and analyzing Cashu vouchers stored on Nostr relays.
 
 ```bash
 # Build from source
-mvn clean package -DskipTests
+./mvnw clean package -DskipTests
 
 # Inspect a voucher
 java -jar cashu-ledger-cli/target/cashu-ledger-cli-0.2.0.jar inspect v-1766748473969
@@ -48,8 +48,9 @@ cashu-ledger/
 ## Requirements
 
 - Java 21 or later
-- Maven 3.9+ (for building)
 - Network access to Nostr relays
+
+> **Note:** Maven wrapper is included (`./mvnw`), so Maven installation is optional.
 
 ## Configuration
 
@@ -101,20 +102,19 @@ Full documentation is available in the [docs](docs/) directory:
 ### Building
 
 ```bash
-mvn clean package
+./mvnw clean package
 ```
 
 ### Running Tests
 
 ```bash
-mvn verify
+./mvnw verify
 ```
 
 ### Building Docker Image
 
 ```bash
-cd cashu-ledger-web
-mvn jib:build
+./mvnw -pl cashu-ledger-web jib:build
 ```
 
 ## License
