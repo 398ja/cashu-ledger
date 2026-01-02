@@ -21,6 +21,12 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- Required for storage E2E tests - optional in core, must be explicit here -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>nostrdb-jni</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>xyz.tcheeric</groupId>
             <artifactId>cashu-ledger-cli</artifactId>
