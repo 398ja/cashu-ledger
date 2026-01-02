@@ -17,11 +17,11 @@ COPY target/cashu-ledger-web-*.jar app.jar
 # Volume for persistent nostrdb cache
 VOLUME /app/data
 
-EXPOSE 8080
+EXPOSE 6060
 
 # Health check using Spring Boot actuator
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8080/actuator/health || exit 1
+    CMD curl -f http://localhost:6060/actuator/health || exit 1
 
 # JVM flags for container environments
 ENV JAVA_OPTS="-XX:+UseContainerSupport \
