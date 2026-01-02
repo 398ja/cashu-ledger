@@ -74,9 +74,8 @@
                             <port>6060</port>
                         </ports>
                         <jvmFlags>
-                            <jvmFlag>-Xms256m</jvmFlag>
-                            <jvmFlag>-Xmx512m</jvmFlag>
                             <jvmFlag>-XX:+UseContainerSupport</jvmFlag>
+                            <jvmFlag>-XX:InitialRAMPercentage=50.0</jvmFlag>
                             <jvmFlag>-XX:MaxRAMPercentage=75.0</jvmFlag>
                             <jvmFlag>-XX:+ExitOnOutOfMemoryError</jvmFlag>
                         </jvmFlags>

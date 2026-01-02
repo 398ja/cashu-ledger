@@ -15,6 +15,9 @@ All notable changes to this project are documented here. This project follows Co
   - Affects: `NostrDbEventStoreTest`, `StorageIntegrationTest`, `StorageCachingE2ETest`
 - **Docker Port** - Correct health check port from 8080 to 6060 in Dockerfile
 - **Build Configuration** - Add missing lombok version in annotationProcessorPaths
+- **Tag Serialization** - Handle all BaseTag types with reflection fallback, not just GenericTag
+- **JVM Memory Config** - Remove conflicting fixed heap flags (-Xms/-Xmx) in favor of percentage-based sizing for containers
+- **NIP-01 Validation** - Use nostr-java's built-in `event.validate()` for NIP-01 compliance with warning logs
 
 ### Changed
 
