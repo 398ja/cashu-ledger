@@ -52,6 +52,31 @@
         </snapshotRepository>
     </distributionManagement>
 
+    <repositories>
+        <repository>
+            <id>reposilite-releases</id>
+            <name>398ja Maven Repository</name>
+            <url>https://maven.398ja.xyz/releases</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>reposilite-snapshots</id>
+            <name>398ja Maven Snapshots Repository</name>
+            <url>https://maven.398ja.xyz/snapshots</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
     <dependencyManagement>
         <dependencies>
             <dependency>
