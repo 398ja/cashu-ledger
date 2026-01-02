@@ -34,8 +34,13 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Relay connection manager backed by nostr-java WebSocket client.
+ *
+ * <p>ClientContext instances are cached in the clients map for connection reuse
+ * and are explicitly closed via {@link #disconnect()} or {@link #closeAndRemoveClient(String)}.
+ * The "resource" warning is suppressed because we manage the lifecycle manually.
  */
 @Slf4j
+@SuppressWarnings("resource") // ClientContext lifecycle managed via disconnect() and closeAndRemoveClient()
 public class NostrRelayConnectionManager implements RelayConnectionManager {
 
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
