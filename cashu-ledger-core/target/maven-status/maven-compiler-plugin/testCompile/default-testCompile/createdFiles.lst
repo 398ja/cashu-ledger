@@ -1,9 +1,0 @@
-xyz/tcheeric/cashu/ledger/core/service/VoucherLedgerServiceImplTest$StubRelayConnectionManager.class
-xyz/tcheeric/cashu/ledger/core/state/StateTransitionValidatorTest.class
-xyz/tcheeric/cashu/ledger/core/service/VoucherLedgerHistoryAndSearchTest$StubRelay.class
-xyz/tcheeric/cashu/ledger/core/service/VoucherTreeBuilderTest$StubRelayConnectionManager.class
-xyz/tcheeric/cashu/ledger/core/service/VoucherTreeBuilderTest.class
-xyz/tcheeric/cashu/ledger/core/service/VoucherLedgerServiceImplTest.class
-xyz/tcheeric/cashu/ledger/core/state/VoucherStateJournalTest.class
-xyz/tcheeric/cashu/ledger/core/mapper/VoucherEventMapperTest.class
-xyz/tcheeric/cashu/ledger/core/service/VoucherLedgerHistoryAndSearchTest.class

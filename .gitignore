@@ -1,3 +1,6 @@
 /.idea/
 /CLAUDE.md
 /AGENTS.md
+
+# Maven build output
+**/target/
