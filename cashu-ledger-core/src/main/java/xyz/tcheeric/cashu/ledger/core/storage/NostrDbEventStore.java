@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -86,7 +87,7 @@ public class NostrDbEventStore implements EventStore {
         }
 
         try {
-            String eventJson = OBJECT_MAPPER.writeValueAsString(event);
+            String eventJson = OBJECT_MAPPER.writeValueAsString(toSerializableEvent(event));
             ndb.processEvent(eventJson);
 
             if (event.getId() != null && relayUrl != null) {
@@ -97,7 +98,6 @@ public class NostrDbEventStore implements EventStore {
                     event.getId(), event.getKind(), relayUrl);
             return true;
         } catch (JsonProcessingException e) {
-            // Serialization failures are recoverable - nostr-java objects may not serialize cleanly
             LOGGER.warn("event_serialization_failed event_id={} error={}",
                     event.getId(), e.getMessage());
             return false;
@@ -107,6 +107,47 @@ public class NostrDbEventStore implements EventStore {
                     event.getId(), e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Converts a GenericEvent to a simple Map structure for JSON serialization.
+     * This avoids issues with nostr-java's complex object graph and null values.
+     */
+    private Map<String, Object> toSerializableEvent(GenericEvent event) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("id", event.getId());
+        map.put("pubkey", event.getPubKey() != null ? event.getPubKey().toString() : null);
+        map.put("created_at", event.getCreatedAt());
+        map.put("kind", event.getKind());
+        map.put("content", event.getContent());
+        map.put("sig", event.getSignature() != null ? event.getSignature().toString() : null);
+
+        // Convert tags to simple string arrays
+        List<List<String>> tags = new ArrayList<>();
+        if (event.getTags() != null) {
+            for (var tag : event.getTags()) {
+                if (tag instanceof nostr.event.tag.GenericTag genericTag) {
+                    List<String> tagList = new ArrayList<>();
+                    String code = genericTag.getCode();
+                    if (code != null) {
+                        tagList.add(code);
+                    }
+                    if (genericTag.getAttributes() != null) {
+                        for (var attr : genericTag.getAttributes()) {
+                            if (attr != null && attr.value() != null) {
+                                tagList.add(attr.value().toString());
+                            }
+                        }
+                    }
+                    if (!tagList.isEmpty()) {
+                        tags.add(tagList);
+                    }
+                }
+            }
+        }
+        map.put("tags", tags);
+
+        return map;
     }
 
     @Override
