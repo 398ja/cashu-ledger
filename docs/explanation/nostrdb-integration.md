@@ -227,7 +227,7 @@ Tests that require the native library use JUnit 5's `@EnabledIf`:
 ```java
 @Test
 @EnabledIf("isNativeLibraryAvailable")
-void shouldStorAndRetrieveVoucherEvent() {
+void shouldStoreAndRetrieveVoucherEvent() {
     // Test implementation
 }
 
