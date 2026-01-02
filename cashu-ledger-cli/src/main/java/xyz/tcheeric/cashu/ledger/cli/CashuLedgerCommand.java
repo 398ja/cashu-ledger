@@ -10,7 +10,15 @@ import xyz.tcheeric.cashu.ledger.cli.unclaimed.UnclaimedCommand;
 import xyz.tcheeric.cashu.ledger.cli.verify.VerifyCommand;
 import xyz.tcheeric.cashu.ledger.cli.diff.DiffCommand;
 import xyz.tcheeric.cashu.ledger.cli.watch.WatchCommand;
+import xyz.tcheeric.cashu.ledger.core.relay.CachingRelayConnectionManager;
+import xyz.tcheeric.cashu.ledger.core.relay.NostrRelayConnectionManager;
+import xyz.tcheeric.cashu.ledger.core.relay.RelayConnectionManager;
+import xyz.tcheeric.cashu.ledger.core.storage.EventStore;
+import xyz.tcheeric.cashu.ledger.core.storage.EventStoreConfig;
+import xyz.tcheeric.cashu.ledger.core.storage.NostrDbEventStore;
 
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,6 +61,21 @@ public class CashuLedgerCommand implements Runnable {
     )
     private String outputFormat;
 
+    @CommandLine.Option(
+            names = {"--storage-path"},
+            description = "Path to local event store database"
+    )
+    private String storagePath;
+
+    @CommandLine.Option(
+            names = {"--no-cache"},
+            description = "Disable local caching (relay-only mode)",
+            defaultValue = "false"
+    )
+    private boolean noCache;
+
+    private EventStore eventStore;
+
     @Override
     public void run() {
         CommandLine.usage(this, System.out);
@@ -71,5 +94,74 @@ public class CashuLedgerCommand implements Runnable {
 
     public String outputFormat() {
         return outputFormat;
+    }
+
+    /**
+     * Returns whether local caching is disabled.
+     *
+     * @return true if caching is disabled
+     */
+    public boolean isNoCache() {
+        return noCache;
+    }
+
+    /**
+     * Returns the storage path for the local event store.
+     *
+     * @return the storage path, or default if not specified
+     */
+    public String storagePath() {
+        if (storagePath == null || storagePath.isBlank()) {
+            return Path.of(System.getProperty("user.home"), ".cashu-ledger", "ndb").toString();
+        }
+        return storagePath;
+    }
+
+    /**
+     * Creates a relay connection manager, optionally with caching enabled.
+     *
+     * @return the relay connection manager
+     */
+    public RelayConnectionManager createRelayConnectionManager() {
+        NostrRelayConnectionManager baseManager = new NostrRelayConnectionManager();
+
+        if (noCache) {
+            return baseManager;
+        }
+
+        EventStore store = getOrCreateEventStore();
+        if (store != null && store.isAvailable()) {
+            return new CachingRelayConnectionManager(baseManager, store, true);
+        }
+
+        return baseManager;
+    }
+
+    /**
+     * Gets or creates the shared event store instance.
+     *
+     * @return the event store, or null if unavailable
+     */
+    public EventStore getOrCreateEventStore() {
+        if (eventStore == null && !noCache) {
+            EventStoreConfig config = new EventStoreConfig(
+                    Path.of(storagePath()),
+                    512L * 1024 * 1024, // 512MB
+                    Duration.ofDays(30),
+                    false
+            );
+            eventStore = new NostrDbEventStore(config);
+        }
+        return eventStore;
+    }
+
+    /**
+     * Closes the event store if it was created.
+     */
+    public void closeEventStore() {
+        if (eventStore != null) {
+            eventStore.close();
+            eventStore = null;
+        }
     }
 }
