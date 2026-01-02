@@ -39,8 +39,20 @@ All notable changes to this project are documented here. This project follows Co
 ### Changed
 
 - Updated cashu-voucher dependency from 0.3.6 to 0.3.7
+- Upgraded Spring Boot from 3.3.4 to 3.5.9 for security fixes
 - Docker image now exposes `/app/data` volume for persistent storage
 - Web module application.yml uses environment variables for configuration
+
+### Fixed
+
+- **Resource Management** - Proper cleanup of WebSocket clients on reconnection
+  - `NostrRelayConnectionManager` now closes clients before removal
+  - `createClient()` properly cleans up on failure
+- **Stream Resource Leak** - Fixed `Files.walk()` stream in `NostrDbEventStore.estimateDatabaseSize()`
+- **Timeout Handling** - `CountDownLatch.await()` results now captured and logged on timeout
+- **Bulk Operations** - Replaced forEach with addAll in `VoucherLedgerServiceImpl`
+- **Redundant Logic** - Simplified eventId comparison in `VoucherStateJournal`
+- **Unused Configuration** - Removed unused `api-base` property from application.yml
 
 ## [0.1.0] - 2025-12-26
 

@@ -75,7 +75,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
             } catch (Exception e) {
                 if (isClosedSessionError(e)) {
                     log.info("relay_connection_closed relay={} reconnecting", relayUrl);
-                    clients.remove(relayUrl);
+                    closeAndRemoveClient(relayUrl);
                     try {
                         ClientContext newContext = getOrReconnectClient(relayUrl);
                         Optional<GenericEvent> event = querySingleRelay(newContext.client(), relayUrl, voucherId);
@@ -122,7 +122,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
             } catch (Exception e) {
                 if (isClosedSessionError(e)) {
                     log.info("relay_connection_closed relay={} reconnecting", relayUrl);
-                    clients.remove(relayUrl);
+                    closeAndRemoveClient(relayUrl);
                     try {
                         ClientContext newContext = getOrReconnectClient(relayUrl);
                         List<RelayEvent> relayResults = queryBatchForRelay(newContext.client(), relayUrl, remainingIds);
@@ -176,8 +176,11 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
                 eoseLatch::countDown
         );
 
-        eoseLatch.await(queryTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        boolean completed = eoseLatch.await(queryTimeout.toMillis(), TimeUnit.MILLISECONDS);
         client.send(new CloseMessage(subscriptionId));
+        if (!completed) {
+            log.debug("relay_query_timeout subscription={}", subscriptionId);
+        }
         return found;
     }
 
@@ -235,7 +238,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
             } catch (Exception e) {
                 if (isClosedSessionError(e)) {
                     log.info("relay_connection_closed relay={} reconnecting", relayUrl);
-                    clients.remove(relayUrl);
+                    closeAndRemoveClient(relayUrl);
                     try {
                         ClientContext newContext = getOrReconnectClient(relayUrl);
                         queryChildrenWithReconnect(newContext, relayUrl, parentVoucherId, limit, seenIds, results);
@@ -274,7 +277,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
             } catch (Exception e) {
                 if (isClosedSessionError(e)) {
                     log.info("relay_connection_closed relay={} reconnecting", relayUrl);
-                    clients.remove(relayUrl);
+                    closeAndRemoveClient(relayUrl);
                     try {
                         ClientContext newContext = getOrReconnectClient(relayUrl);
                         queryVoucherEventsWithReconnect(newContext, relayUrl, voucherId, effectiveLimit, seenIds, results);
@@ -312,7 +315,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
             } catch (Exception e) {
                 if (isClosedSessionError(e)) {
                     log.info("relay_connection_closed relay={} reconnecting", relayUrl);
-                    clients.remove(relayUrl);
+                    closeAndRemoveClient(relayUrl);
                     try {
                         ClientContext newContext = getOrReconnectClient(relayUrl);
                         querySearchVouchersWithReconnect(newContext, relayUrl, effectiveLimit, seenIds, results);
@@ -367,6 +370,16 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
     public void disconnect() {
         clients.values().forEach(ClientContext::close);
         clients.clear();
+    }
+
+    /**
+     * Closes and removes a client from the map, ensuring proper resource cleanup.
+     */
+    private void closeAndRemoveClient(String relayUrl) {
+        ClientContext oldContext = clients.remove(relayUrl);
+        if (oldContext != null) {
+            oldContext.close();
+        }
     }
 
     private Optional<GenericEvent> querySingleRelay(SpringWebSocketClient client, String relayUrl, String voucherId)
@@ -426,8 +439,11 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
                 eoseLatch::countDown
         );
 
-        eoseLatch.await(queryTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        boolean completed = eoseLatch.await(queryTimeout.toMillis(), TimeUnit.MILLISECONDS);
         client.send(new CloseMessage(subscriptionId));
+        if (!completed) {
+            log.debug("relay_query_timeout subscription={}", subscriptionId);
+        }
         return found;
     }
 
@@ -462,8 +478,11 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
                 eoseLatch::countDown
         );
 
-        eoseLatch.await(queryTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        boolean completed = eoseLatch.await(queryTimeout.toMillis(), TimeUnit.MILLISECONDS);
         client.send(new CloseMessage(subscriptionId));
+        if (!completed) {
+            log.debug("relay_query_timeout subscription={}", subscriptionId);
+        }
         return found;
     }
 
@@ -496,8 +515,11 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
                 eoseLatch::countDown
         );
 
-        eoseLatch.await(queryTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        boolean completed = eoseLatch.await(queryTimeout.toMillis(), TimeUnit.MILLISECONDS);
         client.send(new CloseMessage(subscriptionId));
+        if (!completed) {
+            log.debug("relay_query_timeout subscription={}", subscriptionId);
+        }
         return found;
     }
 
@@ -540,13 +562,22 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
     }
 
     private ClientContext createClient(String relayUrl) {
+        long awaitTimeoutMs = queryTimeout.toMillis();
+        long pollIntervalMs = 500L;
+        WebSocketClientIF webSocketClient = null;
         try {
-            long awaitTimeoutMs = queryTimeout.toMillis();
-            long pollIntervalMs = 500L;
-            WebSocketClientIF webSocketClient = new StandardWebSocketClient(relayUrl, awaitTimeoutMs, pollIntervalMs);
+            webSocketClient = new StandardWebSocketClient(relayUrl, awaitTimeoutMs, pollIntervalMs);
             SpringWebSocketClient client = new SpringWebSocketClient(webSocketClient, relayUrl);
             return new ClientContext(webSocketClient, client);
         } catch (Exception e) {
+            // Close the raw WebSocket client if SpringWebSocketClient creation failed
+            if (webSocketClient != null) {
+                try {
+                    webSocketClient.close();
+                } catch (Exception closeEx) {
+                    log.debug("websocket_cleanup_failed relay={} error={}", relayUrl, closeEx.getMessage());
+                }
+            }
             throw new IllegalStateException("Failed to create WebSocket client for relay: " + relayUrl, e);
         }
     }

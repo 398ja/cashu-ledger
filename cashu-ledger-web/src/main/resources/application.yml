@@ -7,7 +7,6 @@ ledger:
       - wss://relay.imani.casa
     timeout: 30s
     cache-ttl: 30s
-    api-base: https://staging.imani.casa/api/v1
     storage:
       enabled: ${LEDGER_WEB_STORAGE_ENABLED:false}
       path: ${LEDGER_WEB_STORAGE_PATH:${user.home}/.cashu-ledger/ndb}

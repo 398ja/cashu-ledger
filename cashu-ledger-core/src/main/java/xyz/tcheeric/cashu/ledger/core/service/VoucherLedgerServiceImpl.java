@@ -498,7 +498,7 @@ public class VoucherLedgerServiceImpl implements VoucherLedgerService {
             depth++;
             for (int i = 0; i < levelSize; i++) {
                 String current = queue.poll();
-                childrenMap.getOrDefault(current, List.of()).forEach(queue::add);
+                queue.addAll(childrenMap.getOrDefault(current, List.of()));
             }
         }
         return depth;
