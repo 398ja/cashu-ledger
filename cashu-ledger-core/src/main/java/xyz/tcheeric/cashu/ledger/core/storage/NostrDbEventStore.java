@@ -341,16 +341,18 @@ public class NostrDbEventStore implements EventStore {
         try {
             Path dbPath = config.databasePath();
             if (Files.exists(dbPath)) {
-                return Files.walk(dbPath)
-                        .filter(Files::isRegularFile)
-                        .mapToLong(p -> {
-                            try {
-                                return Files.size(p);
-                            } catch (IOException e) {
-                                return 0;
-                            }
-                        })
-                        .sum();
+                try (var pathStream = Files.walk(dbPath)) {
+                    return pathStream
+                            .filter(Files::isRegularFile)
+                            .mapToLong(p -> {
+                                try {
+                                    return Files.size(p);
+                                } catch (IOException e) {
+                                    return 0;
+                                }
+                            })
+                            .sum();
+                }
             }
         } catch (IOException e) {
             LOGGER.debug("database_size_estimation_failed error={}", e.getMessage());

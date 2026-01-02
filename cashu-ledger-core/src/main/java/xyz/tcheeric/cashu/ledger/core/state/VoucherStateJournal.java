@@ -85,7 +85,8 @@ public class VoucherStateJournal {
         if (candidate.eventId() != null && current.eventId() != null) {
             return candidate.eventId().compareTo(current.eventId()) > 0;
         }
-        return candidate.eventId() != null && current.eventId() == null;
+        // If we reach here, at least one eventId is null. Prefer the one with a non-null eventId.
+        return candidate.eventId() != null;
     }
 
     private boolean isAfter(Instant left, Instant right) {

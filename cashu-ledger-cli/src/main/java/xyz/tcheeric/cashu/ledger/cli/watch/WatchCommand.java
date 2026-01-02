@@ -30,6 +30,7 @@ public class WatchCommand implements Callable<Integer> {
     private int maxPolls;
 
     @Override
+    @SuppressWarnings("BusyWait") // Intentional polling for CLI watch command
     public Integer call() {
         try (VoucherLedgerService service = buildService()) {
             Optional<VoucherNode> initial = service.fetchVoucher(voucherId);
@@ -42,6 +43,7 @@ public class WatchCommand implements Callable<Integer> {
 
             int polls = 0;
             while (polls < maxPolls) {
+                //noinspection BusyWait - Intentional polling with configurable interval
                 Thread.sleep(intervalSeconds * 1000L);
                 polls++;
                 Optional<VoucherNode> current = service.fetchVoucher(voucherId);
