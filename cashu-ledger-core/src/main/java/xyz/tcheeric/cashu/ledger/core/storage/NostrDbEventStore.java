@@ -97,7 +97,8 @@ public class NostrDbEventStore implements EventStore {
                     event.getId(), event.getKind(), relayUrl);
             return true;
         } catch (JsonProcessingException e) {
-            LOGGER.error("event_serialization_failed event_id={} error={}",
+            // Serialization failures are recoverable - nostr-java objects may not serialize cleanly
+            LOGGER.warn("event_serialization_failed event_id={} error={}",
                     event.getId(), e.getMessage());
             return false;
         } catch (Exception e) {
