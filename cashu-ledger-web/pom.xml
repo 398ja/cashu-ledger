@@ -41,6 +41,11 @@
             <artifactId>lombok</artifactId>
             <scope>provided</scope>
         </dependency>
+        <!-- nostrdb-jni for persistent event caching (optional in core, explicit here) -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>nostrdb-jni</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
@@ -71,8 +76,33 @@
                         <jvmFlags>
                             <jvmFlag>-Xms256m</jvmFlag>
                             <jvmFlag>-Xmx512m</jvmFlag>
+                            <jvmFlag>-XX:+UseContainerSupport</jvmFlag>
+                            <jvmFlag>-XX:MaxRAMPercentage=75.0</jvmFlag>
+                            <jvmFlag>-XX:+ExitOnOutOfMemoryError</jvmFlag>
                         </jvmFlags>
+                        <environment>
+                            <LEDGER_WEB_STORAGE_PATH>/app/data/ndb</LEDGER_WEB_STORAGE_PATH>
+                        </environment>
+                        <volumes>
+                            <volume>/app/data</volume>
+                        </volumes>
+                        <workingDirectory>/app</workingDirectory>
+                        <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
                     </container>
+                    <extraDirectories>
+                        <paths>
+                            <path>
+                                <from>src/main/jib</from>
+                                <into>/app</into>
+                            </path>
+                        </paths>
+                        <permissions>
+                            <permission>
+                                <file>/app/data</file>
+                                <mode>755</mode>
+                            </permission>
+                        </permissions>
+                    </extraDirectories>
                 </configuration>
                 <executions>
                     <execution>
