@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [0.2.2] - 2026-01-10
+
+### Fixed
+
+- **NIP-01 Compliance** - Improved event validation in NostrDbEventStore using nostr-java's built-in validation
+
+### Changed
+
+- Updated nostrdb-jni dependency from 0.1.0-SNAPSHOT to 0.1.1
+- Updated cashu-voucher dependency from 0.3.7 to 0.5.0
+- Improved container memory configuration for JVM
+
 ## [0.2.1] - 2026-01-02
 
 ### Fixed
