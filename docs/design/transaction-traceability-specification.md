@@ -574,7 +574,7 @@ Base path: `/api/v1/trace`. All endpoints require NIP-98 auth (reusing the filte
 
 | Method | Path                                          | Description                                                            |
 |--------|-----------------------------------------------|------------------------------------------------------------------------|
-| GET    | `/events/{eventId}`                           | Fetch a single event                                                   |
+| GET    | `/events/{eventId}`                           | Fetch a single event. Optional `?include=parsed\|raw\|both` (default `parsed`) controls whether the raw `cashuB` token bundle is also returned for `SEND`/`RECEIVE` events (see §5.10 Bundle Token Handling). |
 | GET    | `/operations/{operationId}`                   | Fetch by producer operation id                                         |
 | GET    | `/proofs/{y}`                                 | Chronological list (origin → terminal) of all events involving this Y, with role (`input` or `output`) per event. Supports query `keysetId` to disambiguate (FR-4); if omitted, returns matches across all keysets. |
 | GET    | `/proofs/{y}/walk`                            | Walk DAG; query: `direction=up\|down\|both`, `depth`, `limit`, `cursor` |
@@ -667,6 +667,7 @@ The `status` is computed as: `succeeded` if a terminal `MINT` or `MELT` event re
   "feeAmount": 2,
   "privacyMode": "FULL",
   "schemaVersion": 1,
+  "bundleTokenRaw": null,
   "neighbours": {
     "upstream": [{"eventId": "...", "kind": "MINT", "y": "02a1b2…"}],
     "downstream": [{"eventId": "...", "kind": "MELT", "y": "0211aa…"}]
@@ -751,7 +752,7 @@ The visualisation endpoint trims node payloads to a `summary` object (id, kind, 
 In `cashu-ledger-cli`, new top-level command `trace` with subcommands:
 
 ```
-cashu-ledger trace event <event-id>
+cashu-ledger trace event <event-id> [--raw]
 cashu-ledger trace operation <operation-id>
 cashu-ledger trace proof <y> [--direction up|down|both] [--depth N]
 cashu-ledger trace events --mint-url <url> [--since <iso>] [--until <iso>] [--op <kind>] [--activity active|terminal|any]
@@ -762,7 +763,7 @@ cashu-ledger trace stats
 cashu-ledger trace export <anchor-spec> --format json|csv|graphml > out
 ```
 
-Output formats follow the existing `--output text|json|tree` convention; `tree` renders an ASCII DAG.
+Output formats follow the existing `--output text|json|tree` convention; `tree` renders an ASCII DAG. The `--raw` flag on `trace event` prints the raw `cashuB` bundle token alongside the parsed view for `SEND`/`RECEIVE` events; it requires `trace:read:full` authority and `FULL` privacy mode (rejected with `TRACE_FORBIDDEN` otherwise).
 
 ### 5.7 Producer SDK (separate artefact)
 
@@ -813,8 +814,8 @@ Producers MUST satisfy these invariants before publishing; the ledger MUST verif
 | `MINT_QUOTE_REQUESTED` | empty (`E1`) | empty (`E2`)  | `quote_id` required    | omitted                 | `unit` matches the quote's unit (`U1`)                                           |
 | `MINT`                 | empty (`E1`) | ≥ 1 (`O1`)    | `quote_id` required    | optional, ≥ 0           | `sum(outputs.amount) == quote.amount_in_event_unit` after unit normalisation (`B0`); all outputs share `unit` and `keyset_id` (`K1`); `unit` matches the quote's unit (`U1`) |
 | `SWAP`                 | ≥ 1 (`I1`)   | ≥ 1 (`O1`)    | omitted                | optional, ≥ 0           | sum(inputs.amount) == sum(outputs.amount) + fee (`B1`); all share `unit` (`U2`) |
-| `SEND`                 | ≥ 1 (`I1`)   | empty (`E2`)  | omitted                | omitted                 | `bundle_id` required (`L1`)                                                      |
-| `RECEIVE`              | ≥ 1 (`I1`)   | empty (`E2`)  | omitted                | omitted                 | `bundle_id` required (`L2`). The matching `SEND` is NOT required to have arrived at ingest — out-of-order arrival is normal across federated relays. The ledger accepts the RECEIVE, marks it `unmatched_send=true` in API responses, and reconciles automatically when the SEND arrives (or vice-versa). A RECEIVE that remains unmatched beyond `bundle-reconciliation-window` (default 7 days) is flagged in `/stats` as `dangling_receive` for operator review. (`L3`) |
+| `SEND`                 | ≥ 1 (`I1`)   | empty (`E2`)  | omitted                | omitted                 | `bundle_id` required (`L1`); if `bundleToken` is present, parsing it MUST yield exactly the `inputs` proof set (`B1_BUNDLE_MISMATCH`) |
+| `RECEIVE`              | ≥ 1 (`I1`)   | empty (`E2`)  | omitted                | omitted                 | `bundle_id` required (`L2`). The matching `SEND` is NOT required to have arrived at ingest — out-of-order arrival is normal across federated relays. The ledger accepts the RECEIVE, marks it `unmatched_send=true` in API responses, and reconciles automatically when the SEND arrives (or vice-versa). A RECEIVE that remains unmatched beyond `bundle-reconciliation-window` (default 7 days) is flagged in `/stats` as `dangling_receive` for operator review. (`L3`). If `bundleToken` is present, parsing it MUST yield exactly the `inputs` proof set (`B1_BUNDLE_MISMATCH`). |
 | `MELT_QUOTE_REQUESTED` | empty (`E1`) | empty (`E2`)  | `quote_id` required    | omitted                 | `payment_hash` required if quote returned one (`Q1`)                            |
 | `MELT`                 | ≥ 1 (`I1`)   | 0..N          | `quote_id` required    | required, ≥ 0 (`F1`)    | `sum(inputs.amount) == quote.amount_in_event_unit + fee + sum(outputs.amount)` after unit normalisation (`B2`); outputs are `change`/`fee_return` only (`R1`) |
 | `MELT_FAILED`          | ≥ 1 (`I1`)   | empty (`E2`)  | `quote_id` required    | omitted                 | `error_code` required (`X1`); does NOT consume inputs in the DAG (FR-1a)         |
@@ -847,6 +848,21 @@ The ledger's `content` JSON serialisation of `inputs` and `outputs` MUST use NUT
 
 A `FULL`-mode proof emitted by the ledger satisfies: stripping the `y` key yields a byte-identical NUT-00 proof to what the producer hashed for `Y`.
 
+#### Bundle Token Handling (V4)
+
+`SEND` and `RECEIVE` events MAY carry the raw `cashuB` token bundle the user actually shipped, so auditors can verify byte-for-byte that the trace event matches what was transmitted out-of-band. The bundle token is a NUT-00 v4 CBOR-encoded blob carrying the mint URL, unit, optional memo, and the proof list.
+
+| Aspect                      | Rule                                                                                                                                                                                                                                                                                                                                                                |
+|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Storage location            | Optional `bundleToken` field in the event's `content` JSON. NOT a Nostr tag — token sizes can exceed practical tag-size budgets and tags are designed for indexable scalars, not blobs.                                                                                                                                                                              |
+| Privacy-mode gating         | Present in `FULL` only. The CBOR bundle includes per-proof `secret` and `C`, so it is FULL-mode-only data. `HASHED` and `MINIMAL` events MUST omit the field entirely; the producer SDK refuses to publish a HASHED/MINIMAL `SEND`/`RECEIVE` with a non-null `bundleToken` (`TRACE_PRIVACY_VIOLATION`).                                                              |
+| Token format                | V4 (`cashuB...`) only. V3 (`cashuA...`, JSON-encoded) is legacy; the producer SDK refuses to publish a V3 token with `TRACE_LEGACY_TOKEN_FORMAT`. Operators carrying V3 traffic MUST upgrade their wallet/mint to emit V4 before adopting bundle-token capture.                                                                                                       |
+| Ingest verification         | The ledger re-parses the CBOR on ingest and asserts the parsed proof list (mint URL, unit, ordered `(keysetId, amount, secret, C)` tuples) equals the event's `inputs`. Mismatch → reject with `INVALID_OPERATION` sub-code `B1_BUNDLE_MISMATCH`. Re-parsing makes the raw a verifiable artefact, not an opaque blob, at the cost of one CBOR parse per SEND/RECEIVE. |
+| Size limit                  | 64 KB per raw token. Larger tokens rejected at ingest with `TRACE_BUNDLE_TOO_LARGE`. Operators tuning for unusual workloads can override the cap via `trace.bundle-token.max-bytes`; the default is conservative.                                                                                                                                                    |
+| CBOR parser                 | Reuse the existing `cashu-java` v4 parser. Defensive limits enforced at ingest: max nesting depth 8, the size cap above, reject unknown CBOR major types. No new parser implementation in this project — keeps the security-review surface bounded.                                                                                                                  |
+| Read API                    | `GET /events/{id}?include=parsed` (default) returns the structural proof view only. `?include=raw` adds `bundleTokenRaw` (base64url-encoded) to the response, requires `trace:read:full`, and the underlying event must have been published in `FULL` mode. `?include=both` returns parsed structure plus `bundleTokenRaw`.                                          |
+| Tombstones                  | When a `SEND`/`RECEIVE` event is pruned (§5.11), the `bundleToken` is gone with the rest of the payload. The tombstone retains `bundle_id` so the SEND↔RECEIVE link survives, but the raw token is unrecoverable — operators who anticipate audit recall MUST archive raw events before pruning, as the existing pruning rule already stipulates.                    |
+
 ### 5.11 Pruning and Tombstones
 
 `EVENT_PRUNED` is the audit kind emitted when a retention policy removes a payload. It is the only mechanism by which trace data is ever removed; "editing or deleting events" in Section 11 refers to producer-initiated changes, which remain out of scope.
@@ -867,7 +883,7 @@ Pruning semantics:
 
 
 - The `/visualisation` graph endpoint NEVER returns secret-bearing fields; the front-end starts with a redacted-by-default view.
-- Drill-down requires an **explicit user action** ("Reveal secret payload" button) per node; revealed payloads are not auto-cached by the front-end and are evicted when the panel closes or the user navigates away.
+- Drill-down requires an **explicit user action** ("Reveal secret payload" button) per node; revealed payloads are not auto-cached by the front-end and are evicted when the panel closes or the user navigates away. For `SEND`/`RECEIVE` events the drill-down panel adds a secondary "Show raw token" tab next to the parsed view, fetching `?include=raw`; the same eviction, banner, and audit-log rules apply.
 - The UI SHOULD display a banner each time a secret is rendered: "Showing FULL payload — do not screenshot or share."
 - The browser MUST set `Cache-Control: no-store` on all responses from `/api/v1/trace/events/*` to prevent intermediate caches from retaining secrets.
 - Each drill-down request to `/api/v1/trace/events/{eventId}` is recorded in the access log (Section 7.4) with `payload_revealed=true`, so operators can audit who looked at what.
@@ -1232,7 +1248,7 @@ These require stakeholder input before or during implementation. Items closed du
 3. **Federation / cross-instance ledger.** If two operators wish to share a partial trace (e.g., when value moves between mints they each run), how is sharing scoped — relay-level (publish to a shared relay) or API-level (signed export packages)? This intersects with privacy posture and is intentionally deferred.
 4. **Voucher and traceability event ordering.** When a SEND publishes a `kind: 30078` voucher event and a `kind: 9079` traceability event, which is ordered first? Does the consumer need both before it can render a complete picture, or is each independently useful?
 5. ~~**Schema evolution.**~~ **CLOSED** by §5.12: four-tier compatibility ladder (silent / silent / warn / reject), additive vs breaking distinction, mandatory CHANGELOG and Revision Log entries on every bump, discovery via `GET /relays`.
-6. **Token bundle representation.** A `cashuB` token bundle is a v4 CBOR blob. When the user wants to "drill down to token content", do we render the parsed bundle (mint URL, unit, list of proofs) or the raw token string, or both?
+6. ~~**Token bundle representation.**~~ **CLOSED** by §5.10 Bundle Token Handling: parsed by default, raw `cashuB` v4 CBOR token optionally carried in `content.bundleToken` (FULL only), verified on ingest against `inputs` (`B1_BUNDLE_MISMATCH`), 64 KB cap, V3 (`cashuA`) refused with `TRACE_LEGACY_TOKEN_FORMAT`. API: `?include=parsed|raw|both` on `/events/{id}`.
 7. **Sanitised export for sharing.** How does an operator export a trace bundle to share with an auditor without leaking secrets? Define a redaction tool (post-T7) that downgrades a `FULL` export to `HASHED`. The redaction tool needs access to the `redaction_key` and the `redaction_key_id`; how is that key shared with the auditor (or is the export double-anonymised under a one-shot key)?
 8. **Time-series visualisation.** The current spec describes graph (node-link) visualisation. Should we also support a Sankey-style flow diagram for value flow over time, or defer?
 9. **Partial Lightning settlement (MPP).** For NUT-08 `MELT` operations where Lightning settlement is partial (e.g., MPP under-delivery), is the correct representation: (a) a single `MELT_FAILED` with `partial=true` tag, or (b) a `MELT` for the settled portion plus a compensating refund event? The spec currently allows either; pick one before T2.x.
@@ -1248,6 +1264,7 @@ These require stakeholder input before or during implementation. Items closed du
 - ~~Indexing strategy~~ — **CLOSED** by Section 5.4: SQLite sidecar index alongside nostrdb, with rebuild on startup.
 - ~~NUT-08 fee-return modelling~~ — **CLOSED** by Sections 5.3 (`output_role`) and 5.9 (validation invariants R1, F1): `feeAmount` is actually-charged; `fee_return` outputs ride in the same MELT event.
 - ~~Schema evolution policy~~ — **CLOSED** by Section 5.12: four-tier ladder (`N`/`N-1` silent, `N-2` `TRACE_DEPRECATED_SCHEMA`, `≤N-3` `TRACE_UNSUPPORTED_SCHEMA`, `>N` `TRACE_FUTURE_SCHEMA`); additive changes (new tags, kinds, error codes, `output_role` values) do not bump the version; `GET /relays` advertises `supportedSchemaVersions`.
+- ~~Token bundle representation~~ — **CLOSED** by Section 5.10 Bundle Token Handling: optional `content.bundleToken` field on SEND/RECEIVE in FULL mode only; ledger re-parses CBOR on ingest and rejects mismatches as `B1_BUNDLE_MISMATCH`; 64 KB cap; V4-only (`cashuB`); `GET /events/{id}?include=parsed|raw|both` controls the read shape.
 
 ## 11. Out of Scope (deferred)
 
@@ -1386,3 +1403,14 @@ Closes Open Question 5. Driven by the need to lock the producer/ledger compatibi
 - [Section 5.9] Rewrote invariant `V1` to delegate to §5.12 instead of hard-coding `schema_version=1` as the only accepted value.
 - [Section 5.12 — new] "Schema Evolution Policy" subsection: four-tier compatibility ladder (`N`/`N-1` silent, `N-2` `TRACE_DEPRECATED_SCHEMA` warn, `≤N-3` `TRACE_UNSUPPORTED_SCHEMA` reject, `>N` `TRACE_FUTURE_SCHEMA` reject); producer SDK guard with the `+1` rollout window; the additive-vs-breaking distinction (new tags, kinds, error codes, `output_role` values do NOT bump the version); mandatory CHANGELOG and Revision Log entries on every bump; sidecar re-derivation only when the bump touches indexed columns; new error codes `TRACE_DEPRECATED_SCHEMA`, `TRACE_UNSUPPORTED_SCHEMA`, `TRACE_FUTURE_SCHEMA`, and `TRACE_UNKNOWN_KIND` for older ledgers receiving newer kinds; SDK discovery refresh policy with a 1-hour cache ceiling.
 - [Section 10] Open Question 5 marked **CLOSED** in-place and added to the "Closed during review" subsection.
+
+### Round 7 — Bundle token handling patch
+
+Closes Open Question 6. Driven by the audit requirement that operators be able to verify what `cashuB` token actually shipped during a `SEND`/`RECEIVE`, byte-for-byte, rather than trust the parsed proof list alone.
+
+- [Section 5.5] Extended `GET /events/{eventId}` with the `?include=parsed|raw|both` query parameter; added `bundleTokenRaw: null` to the single-event response shape.
+- [Section 5.6] Added `--raw` flag to `cashu-ledger trace event`, gated on `trace:read:full` and `FULL` privacy mode.
+- [Section 5.8] Added a "Show raw token" tab on the SEND/RECEIVE drill-down panel with the same eviction / banner / audit-log rules as the parsed reveal.
+- [Section 5.9] Extended SEND and RECEIVE invariant rows with the `B1_BUNDLE_MISMATCH` rule: if `bundleToken` is present, the ledger re-parses and asserts equality with the event's `inputs`.
+- [Section 5.10 — new "Bundle Token Handling (V4)" subsection] Optional `content.bundleToken` field on SEND/RECEIVE; FULL-mode-only; V4 (`cashuB`) only with V3 (`cashuA`) refused via `TRACE_LEGACY_TOKEN_FORMAT`; ledger-side ingest verification via `cashu-java`'s existing v4 CBOR parser; 64 KB cap (overridable via `trace.bundle-token.max-bytes`) with `TRACE_BUNDLE_TOO_LARGE` rejection; defensive parser limits (max depth 8, reject unknown CBOR major types); tombstone behaviour (raw token lost on prune, `bundle_id` link survives).
+- [Section 10] Open Question 6 marked **CLOSED** in-place and added to the "Closed during review" subsection.
