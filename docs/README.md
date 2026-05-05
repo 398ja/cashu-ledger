@@ -42,6 +42,16 @@ Technical descriptions of the system and its components.
 | [Voucher Specification](reference/voucher-specification.md) | Voucher state model and Nostr event format |
 | [Configuration](reference/configuration.md) | Configuration properties reference |
 
+### Design
+
+| Document | Description |
+|----------|-------------|
+| [Cashu Ledger Specification](design/cashu-ledger-specification.md) | Core ledger tool specification |
+| [Client REST API Specification](design/client-rest-api-specification.md) | Authenticated client API for voucher management |
+| [nostrdb Storage Usage](design/nostrdb-storage-usage.md) | Storage layer design with nostrdb |
+| [nostrdb-jni Integration Plan](design/nostrdb-jni-integration-plan.md) | JNI integration plan for nostrdb |
+| [Transaction Traceability Specification](design/transaction-traceability-specification.md) | Chain-of-custody DAG for Cashu mint/swap/melt/send/receive operations |
+
 ### Explanation
 
 Background information and design decisions.
