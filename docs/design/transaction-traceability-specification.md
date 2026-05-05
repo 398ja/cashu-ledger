@@ -394,6 +394,7 @@ The earlier proposal of `30079` is rejected (Open Question 14 / 5 closed). Compa
 | `issuer_id`          | 0..1        | Merchant identifier copied from `VoucherNode.issuerId` at publish time. Denormalised so `/events?issuerId=…` is a single-index scan (Section 5.4) without joining through `voucher_ref`. Lowercase ASCII, length ≤ 128. MAY be present without `voucher_ref` for events that the producer associates with a merchant but that have not yet bound to a specific voucher (see Section 5.3.1 — Issuer denormalisation). |
 | `issuer_pubkey`      | 0..1        | Hex Schnorr pubkey (64 chars, lowercase) of the merchant; copied from `VoucherNode.issuerPublicKey` at publish time. The merchant signed the voucher event with this key, so it is a stable join key across vouchers issued by the same merchant. |
 | `bundle_id`          | 0..1        | Producer-supplied UUIDv7 linking SEND and matching RECEIVE events (FR-1a)  |
+| `transfer_id`        | 0..1        | Producer-supplied UUIDv7 correlating the two halves of a cross-mint flow (e.g., a swap-out at mint A paired with a swap-in at mint B). Each mint emits its own event with the same `transfer_id`. NOT used for intra-mint operations — `bundle_id` covers SEND/RECEIVE within the same operator. See §5.3.2 for the cross-mint correlation rules. |
 | `fee`                | 0..1        | Numeric, in `unit`. Reports the *actually-charged* fee for completed operations; for FAILED events, this tag is omitted (no fee was charged). |
 | `error_code`         | 0..1        | Producer-defined error code                                                |
 | `correction_of`      | 0..1        | Nostr event id of the event being corrected                                |
@@ -411,7 +412,7 @@ The Nostr event id is `SHA-256` over the canonical JSON serialisation per NIP-01
 2. **`pubkey`**: 64-char lowercase hex; no `0x` prefix.
 3. **`kind`**: integer `9079`.
 4. **Tag ordering** (outer array): tags MUST be emitted in this stable order:
-   - `d`, `op`, `mint_url`, `unit`, `transition_at`, `producer_pubkey`, `initiator_pubkey`, `schema_version`, `privacy_mode`, `redaction_key_id`, `traceability_op`, `bundle_id`, `voucher_ref`, `issuer_id`, `issuer_pubkey`, `quote_id`, `payment_hash`, `fee`, `error_code`, `correction_of`, `overflow_policy`, then all `input_y` (in input-array index order), then all `output_y` (in output-array index order), then all `output_role` (in output-array index order, must align 1:1 with `output_y`).
+   - `d`, `op`, `mint_url`, `unit`, `transition_at`, `producer_pubkey`, `initiator_pubkey`, `schema_version`, `privacy_mode`, `redaction_key_id`, `traceability_op`, `bundle_id`, `transfer_id`, `voucher_ref`, `issuer_id`, `issuer_pubkey`, `quote_id`, `payment_hash`, `fee`, `error_code`, `correction_of`, `overflow_policy`, then all `input_y` (in input-array index order), then all `output_y` (in output-array index order), then all `output_role` (in output-array index order, must align 1:1 with `output_y`).
 5. **Inner-tag arrays** are emitted as `[name, value1, value2, ...]` with values in the order specified by their per-tag rule. Strings are exact (no whitespace trim) and lowercase where the tag definition says so.
 6. **`content`** is canonical JSON of a top-level object. Determinism rules:
    - **Always-present keys**: `inputs` and `outputs`. They MUST appear even when empty (e.g., `MINT` has `"inputs": []`); a missing `inputs` or `outputs` key is rejected.
@@ -472,6 +473,26 @@ The `content` JSON uses NUT-00 canonical proof field names (`id`, `C`, `secret`,
 **Producer responsibility.** When a producer publishes an event with both `voucher_ref` and `issuer_*` tags, the issuer values MUST agree with the referenced voucher. The ledger does not cross-check this at ingest (the voucher event may not yet have arrived), but a background reconciler (Section 6.4) flags inconsistencies in `/stats` as `issuer_mismatch` for operator review.
 
 **Privacy.** Issuer fields are NEVER hashed or omitted, even in `HASHED` or `MINIMAL` privacy modes. The voucher event itself publishes the issuer in plaintext on a relay, so redacting the same value on the trace event would not increase privacy and would break filter UX. This is recorded as a Section 5.2 exception and reinforced in Section 7.2.
+
+#### 5.3.2 Multi-Mint and Cross-Mint Flows
+
+A single ledger deployment may serve multiple mints (each with its own `mint_url`). Multi-mint visualisation and cross-mint flow correlation are governed by these rules:
+
+**Visualisation default — per-mint sub-graphs.** The `/visualisation` endpoint and the web UI render each mint's events as an independent sub-graph by default. Operators rarely want a tangled megagraph; the per-mint view keeps each mint's DAG visually coherent. The web UI exposes an **"All mints" overlay toggle** that merges the sub-graphs into a single view, with each mint coloured distinctly and `transfer_id` edges drawn between them. The overlay is opt-in to avoid surprising users with a dense graph on first render.
+
+**Cross-mint flows — two-event model.** When value moves between two mints (e.g., a wallet melts at mint A and re-mints at mint B), each mint emits its own trace event. The two events are correlated by a shared `transfer_id` tag (UUIDv7, producer-supplied):
+
+- The two events are **independent** — each mint records what its own mint observed (`MELT` at A, `MINT` at B). Neither event's `inputs` references the other's proofs (different keysets, different `Y` values).
+- The `transfer_id` is computed by the wallet/orchestrator that initiates the transfer; both producers MUST use the same value. If the producers cannot agree on a `transfer_id` (e.g., uncoordinated wallets), the events are emitted without it and the cross-mint link is invisible — that is acceptable and not an error.
+- The single-event `transfer_id` model is rejected because it would require one mint to know proofs that exist only on the other mint, violating the "one mint per event" invariant (`mint_url` consistency, `M1` in §5.9).
+
+**Indexing.** The SQLite sidecar adds a `(tag_name='transfer_id', tag_value, transition_at)` index alongside the existing `bundle_id` index (§5.4). Lookups for the second leg of a transfer are O(log n) across the events index.
+
+**API.** `GET /events?transferId=<uuid>` returns the (typically two) events sharing a transfer id. The `/visualisation` endpoint uses the index to draw `edge_role=transfer` edges between matched events when the "All mints" overlay is active.
+
+**Edge role.** A new `edge_role` value `transfer` joins the existing `spend`, `quote`, `possession`, `attempt`, `tombstone` set. It is drawn between two mint-state-change events that share a `transfer_id` and whose `mint_url` values differ. Drawn dashed in the UI to signal that no proofs are shared across the edge.
+
+**Failure modes.** A `transfer_id` present on only one event (the other never arrived, or never published one) is rendered as a dangling half-edge in the overlay view, with a "missing counterpart" annotation in the API response (`transferCounterpartMissing: true`). It is NOT a validation error — the spec accepts that cross-mint coordination is best-effort.
 
 ### 5.4 Storage Indexing (decision: SQLite sidecar)
 
@@ -545,6 +566,7 @@ Required SQLite indexes:
 - `(tag_name='issuer_pubkey', tag_value, transition_at)` — the cryptographic merchant identity; preferred over `issuer_id` for cross-merchant aggregation since `issuer_id` is operator-supplied and may collide across deployments.
 - `(tag_name='quote_id', tag_value)` (composite `<mint_url>::<quote_id>`)
 - `(tag_name='bundle_id', tag_value)`
+- `(tag_name='transfer_id', tag_value, transition_at)` — supports `/events?transferId=…` lookups for the second leg of a cross-mint flow (§5.3.2). Bounded cardinality (one or two events per id) keeps the index compact.
 - `(activity, transition_at)` — auxiliary column on the events index table populated per Section 5.4.1; supports `?activity=active|terminal` filtering on every listing endpoint as a single-index scan.
 
 ### 5.4.1 Activity Classification (cache and invalidation)
@@ -578,7 +600,7 @@ Base path: `/api/v1/trace`. All endpoints require NIP-98 auth (reusing the filte
 | GET    | `/operations/{operationId}`                   | Fetch by producer operation id                                         |
 | GET    | `/proofs/{y}`                                 | Chronological list (origin → terminal) of all events involving this Y, with role (`input` or `output`) per event. Supports query `keysetId` to disambiguate (FR-4); if omitted, returns matches across all keysets. |
 | GET    | `/proofs/{y}/walk`                            | Walk DAG; query: `direction=up\|down\|both`, `depth`, `limit`, `cursor` |
-| GET    | `/events`                                     | List with filters: `mintUrl`, `producerPubkey`, `initiatorPubkey`, `issuerId`, `issuerPubkey`, `op`, `since`, `until`, `voucherRef`, `quoteId`, `activity` (`active` / `terminal` / `any`, default `any`), `limit`, `cursor` |
+| GET    | `/events`                                     | List with filters: `mintUrl`, `producerPubkey`, `initiatorPubkey`, `issuerId`, `issuerPubkey`, `op`, `since`, `until`, `voucherRef`, `quoteId`, `transferId`, `activity` (`active` / `terminal` / `any`, default `any`), `limit`, `cursor` |
 | GET    | `/vouchers/{voucherId}/events`                | Convenience: events tagged with this voucher. Supports the same `activity` filter as `/events`. |
 | GET    | `/issuers/{issuerId}/events`                  | Convenience: events tagged with this merchant id. Supports `since`, `until`, `op`, `activity`, `limit`, `cursor`. The `issuerId` path parameter is the operator-supplied string identifier; for cross-deployment merchant aggregation, prefer the `issuerPubkey` filter on `/events` (cryptographic identity, no collision risk). |
 | GET    | `/quotes/{quoteId}/events`                    | Convenience: events tagged with this quote. The `quoteId` path parameter is the **raw producer-supplied id** (dashed UUIDv7); the caller MUST also supply `?mintUrl=<url>` because `quote_id` collisions across mints are possible. Internally the ledger looks up the composite tag value `<mint_url>::<quote_id>`. |
@@ -740,6 +762,7 @@ The `status` is computed as: `succeeded` if a terminal `MINT` or `MELT` event re
 | `spend`      | A proof produced by the upstream event was consumed by the downstream event              | mint-state-change → mint-state-change                  |
 | `quote`      | A quote-only event preceded a settlement event with matching `quote_id`                  | quote event → MINT/MELT/MINT_FAILED/MELT_FAILED        |
 | `possession` | A SEND/RECEIVE bundle moved proofs between custody parties (no on-mint state change)     | SEND ↔ RECEIVE with matching `bundle_id`               |
+| `transfer`   | Two mint-state-change events on different mints share a `transfer_id` (§5.3.2). Drawn dashed; no proofs cross the edge. | event(mint A) ↔ event(mint B) with matching `transfer_id` and distinct `mint_url` |
 | `attempt`    | A failed mint operation referenced an input proof that it tried — but did not — consume  | MINT_FAILED/MELT_FAILED → input proof's prior origin   |
 | `tombstone`  | The downstream node is a tombstone for a pruned event (Section 5.11)                     | any → tombstone                                        |
 
@@ -791,7 +814,7 @@ The `cashu-ledger-web` module gains a `/trace` page:
 **UI layout:**
 
 - Top: anchor input — type selector (proof / voucher / issuer / quote / event id / time range) + value input + "Render" button. The "issuer" anchor accepts either an `issuer_id` string or an `issuer_pubkey` hex (auto-detected by length and charset); selecting an issuer renders all events tagged with that merchant within the active time range, time-ordered.
-- Left: filter rail — privacy mode, kind multi-select, mint URL filter, **issuer filter** (text input matching `issuer_id` exactly or `issuer_pubkey` prefix), **activity toggle** (`Active only` / `Terminal only` / `All`, default `All`), depth slider (1–10), max nodes slider (50–1000). Terminal nodes when shown are rendered with a desaturated palette and a small badge indicating the `activityReason` (`voucher_terminal`, `all_outputs_spent`, etc.).
+- Left: filter rail — privacy mode, kind multi-select, mint URL filter, **issuer filter** (text input matching `issuer_id` exactly or `issuer_pubkey` prefix), **activity toggle** (`Active only` / `Terminal only` / `All`, default `All`), **multi-mint view selector** (`Per-mint` (default) / `All mints overlay`, §5.3.2 — overlay merges sub-graphs and renders cross-mint `transfer` edges dashed), depth slider (1–10), max nodes slider (50–1000). Terminal nodes when shown are rendered with a desaturated palette and a small badge indicating the `activityReason` (`voucher_terminal`, `all_outputs_spent`, etc.). Each mint is assigned a stable colour from a deterministic palette derived from the `mint_url` hash so overlays remain visually consistent across renders.
 - Centre: graph canvas. Renderer: Cytoscape.js or D3-force. Default layout: dagre (directed acyclic). Node shape encodes kind (circle = mint, square = swap, diamond = melt, etc.). Edge labels show amount.
 - Right: drill-down panel. Selecting a node populates with full event payload. Selecting an edge shows the proof Y plus its full payload. Includes a "Copy operation id" and "Open neighbour" affordance.
 - Bottom: status bar showing `nodes shown / nodes available`, `truncated` flag, ingest lag.
@@ -1243,7 +1266,7 @@ With T1 + T3.1 done, every other phase can proceed in parallel: T2 (producer) de
 
 These require stakeholder input before or during implementation. Items closed during the multi-model review are marked **CLOSED** with a reference to the section that resolves them.
 
-1. **Multi-mint support.** Multiple mints in a single deployment is supported by tagging events with `mint_url`, but should the visualisation default to per-mint sub-graphs or an aggregated view? How are cross-mint flows (e.g., swap-out + swap-in) modelled — as two separate events or correlated by an external transfer id?
+1. ~~**Multi-mint support.**~~ **CLOSED** by §5.3.2: per-mint sub-graphs default with opt-in "All mints" overlay; cross-mint flows are modelled as two independent events correlated by a shared `transfer_id` UUIDv7. New `transfer` `edge_role` and a `(tag_name='transfer_id', tag_value, transition_at)` SQLite index support the lookup. Missing counterparts are surfaced as `transferCounterpartMissing: true` rather than treated as errors.
 2. **Backfill of historical events.** Most existing backends do not log enough information to reconstruct `Y` for historical proofs. Do we attempt a best-effort backfill from existing nostrdb voucher events, marking such backfilled trace events with `provenance=backfill_partial`, or do we accept that traceability begins on the day the producer SDK is adopted?
 3. **Federation / cross-instance ledger.** If two operators wish to share a partial trace (e.g., when value moves between mints they each run), how is sharing scoped — relay-level (publish to a shared relay) or API-level (signed export packages)? This intersects with privacy posture and is intentionally deferred.
 4. **Voucher and traceability event ordering.** When a SEND publishes a `kind: 30078` voucher event and a `kind: 9079` traceability event, which is ordered first? Does the consumer need both before it can render a complete picture, or is each independently useful?
@@ -1265,6 +1288,7 @@ These require stakeholder input before or during implementation. Items closed du
 - ~~NUT-08 fee-return modelling~~ — **CLOSED** by Sections 5.3 (`output_role`) and 5.9 (validation invariants R1, F1): `feeAmount` is actually-charged; `fee_return` outputs ride in the same MELT event.
 - ~~Schema evolution policy~~ — **CLOSED** by Section 5.12: four-tier ladder (`N`/`N-1` silent, `N-2` `TRACE_DEPRECATED_SCHEMA`, `≤N-3` `TRACE_UNSUPPORTED_SCHEMA`, `>N` `TRACE_FUTURE_SCHEMA`); additive changes (new tags, kinds, error codes, `output_role` values) do not bump the version; `GET /relays` advertises `supportedSchemaVersions`.
 - ~~Token bundle representation~~ — **CLOSED** by Section 5.10 Bundle Token Handling: optional `content.bundleToken` field on SEND/RECEIVE in FULL mode only; ledger re-parses CBOR on ingest and rejects mismatches as `B1_BUNDLE_MISMATCH`; 64 KB cap; V4-only (`cashuB`); `GET /events/{id}?include=parsed|raw|both` controls the read shape.
+- ~~Multi-mint support and cross-mint flows~~ — **CLOSED** by Section 5.3.2: per-mint sub-graphs default in the UI, opt-in "All mints" overlay; cross-mint flows modelled as two events correlated by `transfer_id`; new `transfer` edge role; sidecar index `(tag_name='transfer_id', tag_value, transition_at)`.
 
 ## 11. Out of Scope (deferred)
 
@@ -1414,3 +1438,14 @@ Closes Open Question 6. Driven by the audit requirement that operators be able t
 - [Section 5.9] Extended SEND and RECEIVE invariant rows with the `B1_BUNDLE_MISMATCH` rule: if `bundleToken` is present, the ledger re-parses and asserts equality with the event's `inputs`.
 - [Section 5.10 — new "Bundle Token Handling (V4)" subsection] Optional `content.bundleToken` field on SEND/RECEIVE; FULL-mode-only; V4 (`cashuB`) only with V3 (`cashuA`) refused via `TRACE_LEGACY_TOKEN_FORMAT`; ledger-side ingest verification via `cashu-java`'s existing v4 CBOR parser; 64 KB cap (overridable via `trace.bundle-token.max-bytes`) with `TRACE_BUNDLE_TOO_LARGE` rejection; defensive parser limits (max depth 8, reject unknown CBOR major types); tombstone behaviour (raw token lost on prune, `bundle_id` link survives).
 - [Section 10] Open Question 6 marked **CLOSED** in-place and added to the "Closed during review" subsection.
+
+### Round 8 — Multi-mint and cross-mint flow patch
+
+Closes Open Question 1. Driven by deployments running multiple mints and the need to correlate value flowing between them without violating the "one mint per event" invariant.
+
+- [Section 5.3] Added `transfer_id` Nostr tag (cardinality 0..1, UUIDv7) to the tag table; inserted into the canonical tag-ordering rule between `bundle_id` and `voucher_ref`.
+- [Section 5.3.2 — new] "Multi-Mint and Cross-Mint Flows" subsection: per-mint sub-graph as the visualisation default, opt-in "All mints" overlay; the two-event model for cross-mint flows (each mint emits its own event sharing a `transfer_id`); the rationale for rejecting a single-event model (would violate `M1` mint_url consistency); failure-mode handling (missing counterpart surfaced as `transferCounterpartMissing: true`, not an error).
+- [Section 5.4] Added `(tag_name='transfer_id', tag_value, transition_at)` to the SQLite sidecar index list.
+- [Section 5.5] Added `transferId` filter to `/events`; extended the `edgeRole` table with a `transfer` value drawn between two events on different mints sharing a `transfer_id`.
+- [Section 5.8] Added a "multi-mint view selector" to the web-UI filter rail (`Per-mint` default, `All mints overlay`); per-mint colours derive deterministically from the `mint_url` hash so overlays are visually consistent.
+- [Section 10] Open Question 1 marked **CLOSED** in-place and added to the "Closed during review" subsection.
