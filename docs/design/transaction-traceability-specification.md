@@ -1268,7 +1268,7 @@ These require stakeholder input before or during implementation. Items closed du
 
 1. ~~**Multi-mint support.**~~ **CLOSED** by §5.3.2: per-mint sub-graphs default with opt-in "All mints" overlay; cross-mint flows are modelled as two independent events correlated by a shared `transfer_id` UUIDv7. New `transfer` `edge_role` and a `(tag_name='transfer_id', tag_value, transition_at)` SQLite index support the lookup. Missing counterparts are surfaced as `transferCounterpartMissing: true` rather than treated as errors.
 2. ~~**Backfill of historical events.**~~ **CLOSED**: traceability begins on the day the producer SDK is first adopted in a deployment. Best-effort reconstruction from existing nostrdb voucher events is rejected because pre-SDK proofs lack the data needed to derive `Y` (`hash_to_curve(secret)` requires the raw `secret`, which historical voucher events do not carry). Producing partial DAGs with `provenance=backfill_partial` would mislead more than it would inform — operators would interpret missing edges as evidence of activity that never happened, when in fact it is evidence the data was never captured. Operators wanting earlier history MUST archive raw mint/wallet logs separately; cross-correlation with the trace ledger is out of scope.
-3. **Federation / cross-instance ledger.** If two operators wish to share a partial trace (e.g., when value moves between mints they each run), how is sharing scoped — relay-level (publish to a shared relay) or API-level (signed export packages)? This intersects with privacy posture and is intentionally deferred.
+3. ~~**Federation / cross-instance ledger.**~~ **CLOSED — DEFERRED**: explicitly out of scope per §11 ("Cross-instance federation of ledgers"). The intra-deployment cross-mint case is handled via `transfer_id` (§5.3.2). Cross-operator federation requires a separate spec covering trust model, signed export packages or shared-relay scoping, and privacy contract negotiation; it remains deferred until at least one production deployment requests it.
 4. **Voucher and traceability event ordering.** When a SEND publishes a `kind: 30078` voucher event and a `kind: 9079` traceability event, which is ordered first? Does the consumer need both before it can render a complete picture, or is each independently useful?
 5. ~~**Schema evolution.**~~ **CLOSED** by §5.12: four-tier compatibility ladder (silent / silent / warn / reject), additive vs breaking distinction, mandatory CHANGELOG and Revision Log entries on every bump, discovery via `GET /relays`.
 6. ~~**Token bundle representation.**~~ **CLOSED** by §5.10 Bundle Token Handling: parsed by default, raw `cashuB` v4 CBOR token optionally carried in `content.bundleToken` (FULL only), verified on ingest against `inputs` (`B1_BUNDLE_MISMATCH`), 64 KB cap, V3 (`cashuA`) refused with `TRACE_LEGACY_TOKEN_FORMAT`. API: `?include=parsed|raw|both` on `/events/{id}`.
@@ -1290,6 +1290,7 @@ These require stakeholder input before or during implementation. Items closed du
 - ~~Token bundle representation~~ — **CLOSED** by Section 5.10 Bundle Token Handling: optional `content.bundleToken` field on SEND/RECEIVE in FULL mode only; ledger re-parses CBOR on ingest and rejects mismatches as `B1_BUNDLE_MISMATCH`; 64 KB cap; V4-only (`cashuB`); `GET /events/{id}?include=parsed|raw|both` controls the read shape.
 - ~~Multi-mint support and cross-mint flows~~ — **CLOSED** by Section 5.3.2: per-mint sub-graphs default in the UI, opt-in "All mints" overlay; cross-mint flows modelled as two events correlated by `transfer_id`; new `transfer` edge role; sidecar index `(tag_name='transfer_id', tag_value, transition_at)`.
 - ~~Historical backfill~~ — **CLOSED**: no backfill. Traceability starts at producer SDK adoption. Pre-SDK voucher events lack the raw `secret` required to derive `Y`, and partial DAGs would mislead operators.
+- ~~Federation / cross-instance ledger~~ — **CLOSED — DEFERRED** to §11. Intra-deployment cross-mint is handled via `transfer_id` (§5.3.2); cross-operator federation requires its own spec covering trust model, export format, and privacy contract.
 
 ## 11. Out of Scope (deferred)
 
@@ -1456,3 +1457,9 @@ Closes Open Question 1. Driven by deployments running multiple mints and the nee
 Closes Open Question 2. Confirms that traceability starts at SDK adoption rather than reconstructing pre-SDK history from nostrdb voucher events; the raw `secret` required to compute `Y` is not present in historical voucher events and a partial DAG would be misleading.
 
 - [Section 10] Open Question 2 marked **CLOSED** in-place and added to the "Closed during review" subsection.
+
+### Round 10 — Federation deferral
+
+Closes Open Question 3 by formally deferring cross-operator federation to a future spec. The intra-deployment cross-mint case is already covered by `transfer_id` (§5.3.2); operator-to-operator federation requires its own trust model, export format, and privacy contract negotiation that this spec does not attempt.
+
+- [Section 10] Open Question 3 marked **CLOSED — DEFERRED** in-place; cross-referenced to §11.
