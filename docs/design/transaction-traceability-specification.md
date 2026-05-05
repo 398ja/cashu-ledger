@@ -1267,7 +1267,7 @@ With T1 + T3.1 done, every other phase can proceed in parallel: T2 (producer) de
 These require stakeholder input before or during implementation. Items closed during the multi-model review are marked **CLOSED** with a reference to the section that resolves them.
 
 1. ~~**Multi-mint support.**~~ **CLOSED** by §5.3.2: per-mint sub-graphs default with opt-in "All mints" overlay; cross-mint flows are modelled as two independent events correlated by a shared `transfer_id` UUIDv7. New `transfer` `edge_role` and a `(tag_name='transfer_id', tag_value, transition_at)` SQLite index support the lookup. Missing counterparts are surfaced as `transferCounterpartMissing: true` rather than treated as errors.
-2. **Backfill of historical events.** Most existing backends do not log enough information to reconstruct `Y` for historical proofs. Do we attempt a best-effort backfill from existing nostrdb voucher events, marking such backfilled trace events with `provenance=backfill_partial`, or do we accept that traceability begins on the day the producer SDK is adopted?
+2. ~~**Backfill of historical events.**~~ **CLOSED**: traceability begins on the day the producer SDK is first adopted in a deployment. Best-effort reconstruction from existing nostrdb voucher events is rejected because pre-SDK proofs lack the data needed to derive `Y` (`hash_to_curve(secret)` requires the raw `secret`, which historical voucher events do not carry). Producing partial DAGs with `provenance=backfill_partial` would mislead more than it would inform — operators would interpret missing edges as evidence of activity that never happened, when in fact it is evidence the data was never captured. Operators wanting earlier history MUST archive raw mint/wallet logs separately; cross-correlation with the trace ledger is out of scope.
 3. **Federation / cross-instance ledger.** If two operators wish to share a partial trace (e.g., when value moves between mints they each run), how is sharing scoped — relay-level (publish to a shared relay) or API-level (signed export packages)? This intersects with privacy posture and is intentionally deferred.
 4. **Voucher and traceability event ordering.** When a SEND publishes a `kind: 30078` voucher event and a `kind: 9079` traceability event, which is ordered first? Does the consumer need both before it can render a complete picture, or is each independently useful?
 5. ~~**Schema evolution.**~~ **CLOSED** by §5.12: four-tier compatibility ladder (silent / silent / warn / reject), additive vs breaking distinction, mandatory CHANGELOG and Revision Log entries on every bump, discovery via `GET /relays`.
@@ -1289,6 +1289,7 @@ These require stakeholder input before or during implementation. Items closed du
 - ~~Schema evolution policy~~ — **CLOSED** by Section 5.12: four-tier ladder (`N`/`N-1` silent, `N-2` `TRACE_DEPRECATED_SCHEMA`, `≤N-3` `TRACE_UNSUPPORTED_SCHEMA`, `>N` `TRACE_FUTURE_SCHEMA`); additive changes (new tags, kinds, error codes, `output_role` values) do not bump the version; `GET /relays` advertises `supportedSchemaVersions`.
 - ~~Token bundle representation~~ — **CLOSED** by Section 5.10 Bundle Token Handling: optional `content.bundleToken` field on SEND/RECEIVE in FULL mode only; ledger re-parses CBOR on ingest and rejects mismatches as `B1_BUNDLE_MISMATCH`; 64 KB cap; V4-only (`cashuB`); `GET /events/{id}?include=parsed|raw|both` controls the read shape.
 - ~~Multi-mint support and cross-mint flows~~ — **CLOSED** by Section 5.3.2: per-mint sub-graphs default in the UI, opt-in "All mints" overlay; cross-mint flows modelled as two events correlated by `transfer_id`; new `transfer` edge role; sidecar index `(tag_name='transfer_id', tag_value, transition_at)`.
+- ~~Historical backfill~~ — **CLOSED**: no backfill. Traceability starts at producer SDK adoption. Pre-SDK voucher events lack the raw `secret` required to derive `Y`, and partial DAGs would mislead operators.
 
 ## 11. Out of Scope (deferred)
 
@@ -1449,3 +1450,9 @@ Closes Open Question 1. Driven by deployments running multiple mints and the nee
 - [Section 5.5] Added `transferId` filter to `/events`; extended the `edgeRole` table with a `transfer` value drawn between two events on different mints sharing a `transfer_id`.
 - [Section 5.8] Added a "multi-mint view selector" to the web-UI filter rail (`Per-mint` default, `All mints overlay`); per-mint colours derive deterministically from the `mint_url` hash so overlays are visually consistent.
 - [Section 10] Open Question 1 marked **CLOSED** in-place and added to the "Closed during review" subsection.
+
+### Round 9 — Historical-backfill closure
+
+Closes Open Question 2. Confirms that traceability starts at SDK adoption rather than reconstructing pre-SDK history from nostrdb voucher events; the raw `secret` required to compute `Y` is not present in historical voucher events and a partial DAG would be misleading.
+
+- [Section 10] Open Question 2 marked **CLOSED** in-place and added to the "Closed during review" subsection.
