@@ -585,7 +585,7 @@ Base path: `/api/v1/trace`. All endpoints require NIP-98 auth (reusing the filte
 | GET    | `/quotes/{quoteId}/status`                    | Synthesised quote lifecycle: `pending`, `succeeded`, `failed`, `expired`. Computes from presence/absence of terminal events plus quote `expires_at`. Same disambiguation rule: `quoteId` is the raw id and `?mintUrl=<url>` is required. |
 | GET    | `/visualisation`                              | Returns a graph payload suitable for the front-end (nodes + edges) given an anchor and bounds |
 | GET    | `/stats`                                      | Counts by kind, queue depth, lag |
-| GET    | `/relays`                                     | Returns the ledger relay set (FR-10) for producer SDK discovery        |
+| GET    | `/relays`                                     | Returns the ledger relay set (FR-10) plus `supported_schema_versions` for SDK discovery (§5.12) |
 
 **Pagination (decided).** All list endpoints (`/events`, `/proofs/{y}`, `/vouchers/{voucherId}/events`, `/issuers/{issuerId}/events`, `/quotes/{quoteId}/events`, walk endpoints) MUST use **cursor-based pagination**, not offset-based. The cursor is an opaque base64url-encoded JSON object containing `(transition_at, event_id)`; clients pass it back unchanged. The response includes `cursor` (next page) or `null` (end of stream). Offset-based pagination is forbidden because new events ingested during a paginated scan would cause the offset to skip or duplicate items. Sort order for paginated endpoints is `(transition_at DESC, event_id DESC)` by default with an optional `?order=asc` parameter.
 
@@ -621,6 +621,22 @@ Base path: `/api/v1/trace`. All endpoints require NIP-98 auth (reusing the filte
 ```
 
 The `status` is computed as: `succeeded` if a terminal `MINT` or `MELT` event references this quote; `failed` if a `MINT_FAILED` or `MELT_FAILED` event references this quote; `expired` if the quote's `expires_at` has passed without a terminal event; otherwise `pending`.
+
+**Response shape — `GET /relays`**:
+
+```json
+{
+  "relays": [
+    {"url": "wss://relay.imani.casa", "private": true, "role": "primary"},
+    {"url": "wss://backup.imani.casa", "private": true, "role": "fallback"}
+  ],
+  "supportedSchemaVersions": [1],
+  "currentSchemaVersion": 1,
+  "deprecatedSchemaVersions": []
+}
+```
+
+`supportedSchemaVersions` is the inclusive band the ledger will accept on ingest (per §5.12: `[N-2, N-1, N]` once enough versions exist). `deprecatedSchemaVersions` is the subset that is still accepted but emits `TRACE_DEPRECATED_SCHEMA` (today: empty). `currentSchemaVersion` is `N` — the version the ledger emits in its own outputs (e.g., synthesised `EVENT_PRUNED` tombstones). The producer SDK refuses to start if its compile-time `schema_version` is not contained in `supportedSchemaVersions` or is greater than `currentSchemaVersion + 1`.
 
 #### Response shape — single event
 
@@ -812,7 +828,7 @@ Cross-cutting invariants (apply to all kinds):
 - **`mint_url` consistency** (`M1`): all proofs in `inputs` and `outputs` must reference keysets that the ledger has previously seen advertised by the same `mint_url`. Unknown keysets are accepted but logged at WARN with `unknown_keyset` for operator review (the ledger does not maintain a strict keyset registry).
 - **Unit normalisation** (`UN1`): the event's `unit` is the canonical unit for all amount comparisons in that event. `LightningRef.amount` is normalised at the producer to the event's `unit` before publishing — for Lightning operations where the wire protocol uses msat, the producer divides by 1000 to obtain sat (rounding policy: floor). The normalised amount is what `B0` and `B2` compare against. Producers MUST also include the original-unit amount in the `LightningRef.bolt11` decoded form for forensic completeness in `FULL` mode; the ledger does not re-validate the conversion. If the event's `unit` is finer-grained than the Lightning unit (e.g., `msat`), no rounding occurs.
 - **Hex encoding** (`H1`): the following fields are lowercase hex with no `0x` prefix; mixed case is rejected: `keyset_id`, `y`, `C`, `payment_hash`, `pubkey`, `event_id`, `redaction_key_id`. The `secret` field is **NOT** required to be hex — per NUT-00 it is an opaque UTF-8 string and per NUT-10/11 may be a structured JSON-encoded string for spending conditions. The `witness` field is similarly an opaque NUT-defined string (typically a JSON object stringified per NUT-11). Producers MUST preserve `secret` and `witness` exactly as the wallet/mint produced them; the ledger does no normalisation. The `Y` derivation `hash_to_curve(secret)` operates on the raw secret bytes regardless of their encoding, so opacity does not affect the join key.
-- **Schema version** (`V1`): `schema_version=1` is the only currently accepted value.
+- **Schema version** (`V1`): the event's `schema_version` MUST fall within the ledger's accepted band as defined in §5.12. Currently `N = 1`; the four-tier policy (silent / silent / warn / reject) governs how older and newer values are handled.
 - **Output role alignment** (`R3`): if `output_role` tags are present, their count MUST equal `output_y` count and their values must be drawn from `{target, change, fee_return}`.
 
 ### 5.10 NUT-00 Wire Format Mapping
@@ -857,6 +873,47 @@ Pruning semantics:
 - Each drill-down request to `/api/v1/trace/events/{eventId}` is recorded in the access log (Section 7.4) with `payload_revealed=true`, so operators can audit who looked at what.
 - Authority gating: a caller without `trace:read:full` receives the `HASHED` or `MINIMAL` shape regardless of which endpoint they hit; the front-end can only render what the API returns.
 - Browser local storage and indexedDB MUST NOT be used for trace event payloads; the front-end keeps revealed payloads in JS heap memory only.
+
+### 5.12 Schema Evolution Policy
+
+The `schema_version` tag (§5.3) is the single knob that lets the producer SDK and the ledger evolve independently. This subsection defines the four-tier compatibility ladder and the rules for when the version bumps.
+
+**Compatibility ladder.** Let `N` be the ledger's `currentSchemaVersion` (the highest version it knows how to fully validate). On ingest, an event's declared `schema_version` is handled as follows:
+
+| Incoming `schema_version` | Ledger behaviour                                                                                                                                                                                                                                                                            |
+|---------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `N`                       | Accept silently. Validation proceeds against the current schema rules.                                                                                                                                                                                                                       |
+| `N-1`                     | Accept silently. The ledger maintains read/write compatibility for one full generation.                                                                                                                                                                                                      |
+| `N-2`                     | Accept; emit `TRACE_DEPRECATED_SCHEMA` at WARN with the event id and version. Read responses involving the event include `schemaDeprecated: true` so consumers can flag stale rows.                                                                                                          |
+| `≤ N-3`                   | Reject at ingest with `TRACE_UNSUPPORTED_SCHEMA`. Already-indexed events at that version remain readable; no new events at that version are admitted. Operators who need to ingest such events must temporarily run an older ledger build or re-publish under a supported schema version.   |
+| `> N`                     | Reject at ingest with `TRACE_FUTURE_SCHEMA`. The producer SDK is ahead of the ledger; the operator MUST upgrade the ledger before the producer can deliver events at this version.                                                                                                          |
+
+**Producer SDK guard.** The SDK refuses to start when `compileTimeSchemaVersion ∉ ledger.supportedSchemaVersions ∧ compileTimeSchemaVersion > ledger.currentSchemaVersion + 1`. The `+1` window allows a producer to be deployed one version ahead of the ledger during a coordinated rollout (the ledger ingests `N+1` only after its own upgrade lands).
+
+**What triggers a `schema_version` bump.** Bumps are reserved for genuinely breaking changes:
+
+- A tag is renamed (e.g., `producer_pubkey` → `attestor_pubkey`).
+- A field's semantic interpretation changes (e.g., `fee` recast from "actually charged" to "estimated").
+- An operation kind enum value is **removed** (kind additions are additive — see below).
+- A canonicalisation rule changes in a way that alters the deterministic event id derivation (tag ordering, JCS ruleset, integer encoding).
+
+The following are **additive** and MUST NOT bump the version:
+
+- A new optional tag on existing kinds. Unknown tags MUST be preserved by the ledger and round-tripped on `FULL`-mode reads (§5.3 already mandates preservation; this is a normative restatement).
+- A new operation kind (e.g., a future `STAKE` kind). Older ledgers that do not recognise the kind MUST drop the event with `TRACE_UNKNOWN_KIND` rather than rejecting the entire schema version, and MUST emit a metric so the operator notices.
+- A new error code value in `error_code` for an existing kind.
+- A new value for `output_role` that older ledgers can index opaquely.
+
+**Required release artefacts on every bump.** Every bump from `N` to `N+1` MUST include:
+
+1. A `Changed` and (where applicable) `Removed` entry in `CHANGELOG.md` naming the affected tags / fields / kinds.
+2. A migration note appended to this spec's Revision Log explaining what the bump enables and what producers must do.
+3. A sidecar index re-derivation only if the bump affects an indexed column. For purely tag-level renames that do not alter `(keyset_id, Y)`, `mint_url`, `producer_pubkey`, `bundle_id`, `voucher_ref`, `issuer_id`, `issuer_pubkey`, `quote_id`, `activity`, or `transition_at`, no re-derivation is required. For changes that do affect these columns, the migration note MUST cite the rebuild procedure (§5.4 describes the online rebuild path).
+4. A test double in `cashu-ledger-trace-core` that produces a synthetic `N-1` event so regression tests for the four-tier ladder do not bit-rot.
+
+**Discovery.** `GET /relays` (§5.5) advertises `currentSchemaVersion`, `supportedSchemaVersions` (the inclusive band the ledger accepts), and `deprecatedSchemaVersions` (the subset that triggers `TRACE_DEPRECATED_SCHEMA`). Producer SDKs SHOULD refresh this view at startup and on any `TRACE_DEPRECATED_SCHEMA` or `TRACE_FUTURE_SCHEMA` response from a publish attempt; SDKs MUST NOT cache the discovery response longer than 1 hour.
+
+**Cross-references.** `NFR-9` (§4.5) requires the `schema_version` tag mechanism; this subsection defines the policy. `V1` invariant (§5.9) is the per-event check. The `/relays` response shape (§5.5) advertises the versions to producers.
 
 ## 6. Architecture
 
@@ -1174,7 +1231,7 @@ These require stakeholder input before or during implementation. Items closed du
 2. **Backfill of historical events.** Most existing backends do not log enough information to reconstruct `Y` for historical proofs. Do we attempt a best-effort backfill from existing nostrdb voucher events, marking such backfilled trace events with `provenance=backfill_partial`, or do we accept that traceability begins on the day the producer SDK is adopted?
 3. **Federation / cross-instance ledger.** If two operators wish to share a partial trace (e.g., when value moves between mints they each run), how is sharing scoped — relay-level (publish to a shared relay) or API-level (signed export packages)? This intersects with privacy posture and is intentionally deferred.
 4. **Voucher and traceability event ordering.** When a SEND publishes a `kind: 30078` voucher event and a `kind: 9079` traceability event, which is ordered first? Does the consumer need both before it can render a complete picture, or is each independently useful?
-5. **Schema evolution.** Field additions are forward-compatible, but a future Cashu NUT change (e.g., new witness types) may require schema breaks. Define a deprecation policy now (proposed: support N and N-1 schema versions; emit warnings on N-2).
+5. ~~**Schema evolution.**~~ **CLOSED** by §5.12: four-tier compatibility ladder (silent / silent / warn / reject), additive vs breaking distinction, mandatory CHANGELOG and Revision Log entries on every bump, discovery via `GET /relays`.
 6. **Token bundle representation.** A `cashuB` token bundle is a v4 CBOR blob. When the user wants to "drill down to token content", do we render the parsed bundle (mint URL, unit, list of proofs) or the raw token string, or both?
 7. **Sanitised export for sharing.** How does an operator export a trace bundle to share with an auditor without leaking secrets? Define a redaction tool (post-T7) that downgrades a `FULL` export to `HASHED`. The redaction tool needs access to the `redaction_key` and the `redaction_key_id`; how is that key shared with the auditor (or is the export double-anonymised under a one-shot key)?
 8. **Time-series visualisation.** The current spec describes graph (node-link) visualisation. Should we also support a Sankey-style flow diagram for value flow over time, or defer?
@@ -1190,6 +1247,7 @@ These require stakeholder input before or during implementation. Items closed du
 - ~~Producer attestation~~ — **CLOSED** by Section 7.1: ledger requires producer pubkey registration per `mint_url`; rogue publishes are rejected with `TRACE_FORBIDDEN_PRODUCER`.
 - ~~Indexing strategy~~ — **CLOSED** by Section 5.4: SQLite sidecar index alongside nostrdb, with rebuild on startup.
 - ~~NUT-08 fee-return modelling~~ — **CLOSED** by Sections 5.3 (`output_role`) and 5.9 (validation invariants R1, F1): `feeAmount` is actually-charged; `fee_return` outputs ride in the same MELT event.
+- ~~Schema evolution policy~~ — **CLOSED** by Section 5.12: four-tier ladder (`N`/`N-1` silent, `N-2` `TRACE_DEPRECATED_SCHEMA`, `≤N-3` `TRACE_UNSUPPORTED_SCHEMA`, `>N` `TRACE_FUTURE_SCHEMA`); additive changes (new tags, kinds, error codes, `output_role` values) do not bump the version; `GET /relays` advertises `supportedSchemaVersions`.
 
 ## 11. Out of Scope (deferred)
 
@@ -1319,3 +1377,12 @@ Driven by a stakeholder request to suppress events whose underlying tokens are n
 - [Section 6.2] Listed the watcher as a `cashu-ledger-core` extension.
 - [Section 6.4] Added a "Voucher-state watcher offline" row to the failure-mode table — degrades only the `voucher_terminal` reason; other invalidation triggers keep working; `/stats` surfaces `voucher_watcher_lag_seconds` and responses gain a `Stale-Activity` warning header during the outage.
 - [Section 6.5 — new] "Voucher State Watcher" section specifying the kind-`30078` subscription, the in-memory voucher-status map, the high-watermark cursor, the Prometheus metrics, and the failure-isolation contract (watcher failures MUST NOT break trace ingest or reads).
+
+### Round 6 — Schema evolution policy patch
+
+Closes Open Question 5. Driven by the need to lock the producer/ledger compatibility contract before T2.x ships a versioned producer SDK to multiple deployments.
+
+- [Section 5.5] `/relays` table entry now also advertises `supported_schema_versions`; added a `Response shape — GET /relays` JSON example with `supportedSchemaVersions`, `currentSchemaVersion`, and `deprecatedSchemaVersions`.
+- [Section 5.9] Rewrote invariant `V1` to delegate to §5.12 instead of hard-coding `schema_version=1` as the only accepted value.
+- [Section 5.12 — new] "Schema Evolution Policy" subsection: four-tier compatibility ladder (`N`/`N-1` silent, `N-2` `TRACE_DEPRECATED_SCHEMA` warn, `≤N-3` `TRACE_UNSUPPORTED_SCHEMA` reject, `>N` `TRACE_FUTURE_SCHEMA` reject); producer SDK guard with the `+1` rollout window; the additive-vs-breaking distinction (new tags, kinds, error codes, `output_role` values do NOT bump the version); mandatory CHANGELOG and Revision Log entries on every bump; sidecar re-derivation only when the bump touches indexed columns; new error codes `TRACE_DEPRECATED_SCHEMA`, `TRACE_UNSUPPORTED_SCHEMA`, `TRACE_FUTURE_SCHEMA`, and `TRACE_UNKNOWN_KIND` for older ledgers receiving newer kinds; SDK discovery refresh policy with a 1-hour cache ceiling.
+- [Section 10] Open Question 5 marked **CLOSED** in-place and added to the "Closed during review" subsection.
