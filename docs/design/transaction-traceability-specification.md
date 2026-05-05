@@ -1307,7 +1307,7 @@ These require stakeholder input before or during implementation. Items closed du
 5. ~~**Schema evolution.**~~ **CLOSED** by §5.12: four-tier compatibility ladder (silent / silent / warn / reject), additive vs breaking distinction, mandatory CHANGELOG and Revision Log entries on every bump, discovery via `GET /relays`.
 6. ~~**Token bundle representation.**~~ **CLOSED** by §5.10 Bundle Token Handling: parsed by default, raw `cashuB` v4 CBOR token optionally carried in `content.bundleToken` (FULL only), verified on ingest against `inputs` (`B1_BUNDLE_MISMATCH`), 64 KB cap, V3 (`cashuA`) refused with `TRACE_LEGACY_TOKEN_FORMAT`. API: `?include=parsed|raw|both` on `/events/{id}`.
 7. ~~**Sanitised export for sharing.**~~ **CLOSED** by §7.5: sanitise tool re-redacts a `FULL` export under a freshly generated 256-bit ephemeral HMAC key; the operator's deployment-scoped `redaction_key` never leaves the deployment. Two artefacts (`export.json` + `ephemeral_key.bin`) are delivered via separate channels. Sanitised exports are forced to `HASHED` mode, carry a `sanitised: true` flag, and strip raw `cashuB` token bundles (`bundleToken`) which cannot be partially redacted.
-8. **Time-series visualisation.** The current spec describes graph (node-link) visualisation. Should we also support a Sankey-style flow diagram for value flow over time, or defer?
+8. ~~**Time-series visualisation.**~~ **CLOSED — DEFERRED** to v2 of the web UI. The graph (node-link) view in §5.8 is the only visualisation in v1. A Sankey diagram aggregating value flow over time has clear utility for accounting and forensic review, but it is duplicative of the graph view's information content and adds a second visualisation pipeline to maintain. Revisit after T7 telemetry lands so the decision can be informed by actual operator usage patterns rather than speculation.
 9. **Partial Lightning settlement (MPP).** For NUT-08 `MELT` operations where Lightning settlement is partial (e.g., MPP under-delivery), is the correct representation: (a) a single `MELT_FAILED` with `partial=true` tag, or (b) a `MELT` for the settled portion plus a compensating refund event? The spec currently allows either; pick one before T2.x.
 10. **NIP-44 encrypted content for FULL mode over shared relays.** Section 7.2 reserves NIP-44 encrypted content as future work. Confirm whether v2 of this spec should adopt it; if so, decide whether ledger holds a long-term decryption key or rotates per-day session keys.
 11. **Pruning policy for terminal subgraphs.** A fully terminal sub-DAG (every leaf is a MELT or REVOKED) has limited forensic value once retention pressure rises. Should we prune by sub-DAG terminality rather than per-event age?
@@ -1327,6 +1327,7 @@ These require stakeholder input before or during implementation. Items closed du
 - ~~Federation / cross-instance ledger~~ — **CLOSED — DEFERRED** to §11. Intra-deployment cross-mint is handled via `transfer_id` (§5.3.2); cross-operator federation requires its own spec covering trust model, export format, and privacy contract.
 - ~~Voucher / traceability event publish ordering~~ — **CLOSED** by §5.7: voucher event (`kind 30078`) is published first and awaits relay ack before the trace event (`kind 9079`) with `voucher_ref` is published. Failed voucher publishes degrade to trace-without-`voucher_ref`; consumers tolerate either the trace alone or the voucher alone, but never a `voucher_ref` that resolves to nothing.
 - ~~Sanitised export for external sharing~~ — **CLOSED** by Section 7.5: sanitise tool re-redacts under a freshly generated ephemeral HMAC key; export and key are delivered separately; operator's `redaction_key` never leaves the deployment; `cashuB` bundle tokens stripped during sanitisation; sanitised exports carry `sanitised: true` and `ephemeral_key_id`.
+- ~~Time-series / Sankey visualisation~~ — **CLOSED — DEFERRED** to v2 of the web UI. Graph (node-link) view is the only visualisation in v1; revisit after T7 telemetry shows real operator usage patterns.
 
 ## 11. Out of Scope (deferred)
 
@@ -1515,3 +1516,9 @@ Closes Open Question 7 by specifying a sanitise tool that produces self-containe
 - [Section 7.5 — new] "Sanitised Export for External Sharing" subsection defining the workflow (anchor selection → ephemeral key generation → re-redaction → two-artefact delivery), the auditor's verification scope (joins within the export only), the privacy contract (production `redaction_key` refused; `bundleToken` stripped because partial CBOR redaction is not safe; `sanitised: true` and `ephemeral_key_id` markers; `FULL` round-trip not preserved), and audit logging requirements.
 - [Section 7.6] Renumbered the previous "Cryptographic Considerations" subsection from 7.5 to 7.6 to make room.
 - [Section 10] Open Question 7 marked **CLOSED** in-place and added to the "Closed during review" subsection.
+
+### Round 13 — Time-series visualisation deferral
+
+Closes Open Question 8 by deferring Sankey-style flow visualisation to a future v2 of the web UI. Graph (node-link) view in §5.8 remains the only visualisation in v1; a Sankey adds a second pipeline to maintain and is largely duplicative of the graph view's information content. Re-evaluation deferred until T7 telemetry shows real operator usage patterns.
+
+- [Section 10] Open Question 8 marked **CLOSED — DEFERRED** in-place.
