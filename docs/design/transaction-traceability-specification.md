@@ -784,6 +784,7 @@ cashu-ledger trace issuer <issuer-id> [--by-pubkey] [--since <iso>] [--until <is
 cashu-ledger trace quote <quote-id>
 cashu-ledger trace stats
 cashu-ledger trace export <anchor-spec> --format json|csv|graphml > out
+cashu-ledger trace export <anchor-spec> --sanitise --output <dir>
 ```
 
 Output formats follow the existing `--output text|json|tree` convention; `tree` renders an ASCII DAG. The `--raw` flag on `trace event` prints the raw `cashuB` bundle token alongside the parsed view for `SEND`/`RECEIVE` events; it requires `trace:read:full` authority and `FULL` privacy mode (rejected with `TRACE_FORBIDDEN` otherwise).
@@ -1124,7 +1125,38 @@ If a caller has no authority, requests return `403 TRACE_FORBIDDEN`.
 - Every authenticated read MUST be logged at INFO with `actor`, `endpoint`, `anchor`, and `result_size`. Logs are structured key-value (per project logging conventions).
 - The ledger exposes a `/api/v1/trace/admin/access-log` endpoint (admin only) that streams the access log for compliance review.
 
-### 7.5 Cryptographic Considerations
+### 7.5 Sanitised Export for External Sharing
+
+Operators occasionally need to share a partial trace with an external auditor or counterparty without exposing the deployment's long-term `redaction_key`. The spec provides a **sanitise tool** that produces a self-contained export package using a one-shot ephemeral redaction key. The operator's `redaction_key` never leaves the deployment.
+
+**Workflow.**
+
+1. Operator selects an anchor (proof, voucher, issuer, transfer, time range) and runs `cashu-ledger trace export <anchor> --sanitise --output <dir>`.
+2. The tool generates a fresh 256-bit ephemeral HMAC key (`ephemeral_key`) using the platform CSPRNG. The key is unique per export.
+3. The tool walks the export and re-redacts every secret-bearing field using `ephemeral_key` instead of the deployment's `redaction_key`. The redaction recipe is the same as §5.2 / §7.5 (HMAC-SHA-256, identical domain separation per field), so cross-event joins on the redacted `Y` and other join keys remain verifiable within the export.
+4. The tool emits two artefacts:
+   - `export.json` — the sanitised events. Privacy mode is forced to `HASHED` regardless of the source events' modes; `redaction_key_id` on every event is overwritten to a new value (`ephemeral-<random_8>` so it is visually distinct from production key ids).
+   - `ephemeral_key.bin` — the 32-byte raw ephemeral key.
+5. The operator delivers the two artefacts to the auditor via separate channels (e.g., signed email + secure messenger). The export is useless without the key, and the key is useless without the export.
+
+**Verification by the auditor.** The auditor uses `ephemeral_key.bin` together with `export.json` to re-derive HMACs and verify that the proof-join graph is internally consistent. The auditor cannot:
+
+- Correlate the export against any other operator data (different key).
+- Dictionary-attack secrets across the operator's full ledger (the operator's `redaction_key` was never used).
+- Reuse the key against any future operator export (each export uses a fresh key).
+
+**Privacy contract.**
+
+- Operator's deployment-scoped `redaction_key` MUST NOT be used to produce a sanitised export. The sanitise tool refuses if it is configured against the production `redaction_key`; the only way to re-redact is with a freshly generated `ephemeral_key`.
+- Sanitised exports MUST carry a top-level `sanitised: true` flag and the `ephemeral_key_id` value, so that audit logs and downstream tooling can distinguish them from raw ledger output.
+- `FULL`-mode round-trip is not preserved through sanitisation. The export is intentionally one-way; an auditor cannot reconstruct the original `secret` or `C` even with the ephemeral key.
+- The raw `cashuB` token bundle (§5.10 Bundle Token Handling) is **stripped entirely** during sanitisation — there is no privacy-preserving way to redact a CBOR token while keeping its proof set intact, and the parsed proof structure already provides the auditable view.
+
+**Audit logging.** Every sanitised export is logged at INFO with `sanitise_completed event_count=N anchor=<anchor> ephemeral_key_id=<id>` and the access entry recorded per §7.4. The operator's runbook MUST cover (a) verifying the auditor's identity before delivery, (b) selecting separate channels for the export and the key, and (c) revoking the export by simply destroying the ephemeral key file (the export becomes opaque without it).
+
+(Closes Open Question 7.)
+
+### 7.6 Cryptographic Considerations
 
 - Producer signs the Nostr event with secp256k1 Schnorr per NIP-01.
 - `Y = hash_to_curve(secret)` per Cashu NUT-00 / NUT-11. The implementation MUST use the same curve, domain separation, and hash function as the wallet to ensure consistent join keys.
@@ -1274,7 +1306,7 @@ These require stakeholder input before or during implementation. Items closed du
 4. ~~**Voucher and traceability event ordering.**~~ **CLOSED**: producer SDK MUST publish the voucher event (`kind 30078`) FIRST, await its acceptance from at least one ledger-subscribed relay, then publish the trace event (`kind 9079`) referencing the voucher's `d` tag via `voucher_ref`. Rationale: the trace event's `voucher_ref` is a pointer; emitting the trace event first creates a window in which consumers can resolve the pointer to nothing. Each event is independently useful — a trace event without a voucher is meaningful (the operation happened) and a voucher without a trace event is meaningful (legacy compatibility for pre-SDK deployments) — but a trace event whose `voucher_ref` cannot resolve is a worse user experience than a brief delay. The producer SDK enforces the ordering when publishing both events for the same operation; if the voucher publish fails, the trace event is published without `voucher_ref` and the SDK retries the voucher in the background.
 5. ~~**Schema evolution.**~~ **CLOSED** by §5.12: four-tier compatibility ladder (silent / silent / warn / reject), additive vs breaking distinction, mandatory CHANGELOG and Revision Log entries on every bump, discovery via `GET /relays`.
 6. ~~**Token bundle representation.**~~ **CLOSED** by §5.10 Bundle Token Handling: parsed by default, raw `cashuB` v4 CBOR token optionally carried in `content.bundleToken` (FULL only), verified on ingest against `inputs` (`B1_BUNDLE_MISMATCH`), 64 KB cap, V3 (`cashuA`) refused with `TRACE_LEGACY_TOKEN_FORMAT`. API: `?include=parsed|raw|both` on `/events/{id}`.
-7. **Sanitised export for sharing.** How does an operator export a trace bundle to share with an auditor without leaking secrets? Define a redaction tool (post-T7) that downgrades a `FULL` export to `HASHED`. The redaction tool needs access to the `redaction_key` and the `redaction_key_id`; how is that key shared with the auditor (or is the export double-anonymised under a one-shot key)?
+7. ~~**Sanitised export for sharing.**~~ **CLOSED** by §7.5: sanitise tool re-redacts a `FULL` export under a freshly generated 256-bit ephemeral HMAC key; the operator's deployment-scoped `redaction_key` never leaves the deployment. Two artefacts (`export.json` + `ephemeral_key.bin`) are delivered via separate channels. Sanitised exports are forced to `HASHED` mode, carry a `sanitised: true` flag, and strip raw `cashuB` token bundles (`bundleToken`) which cannot be partially redacted.
 8. **Time-series visualisation.** The current spec describes graph (node-link) visualisation. Should we also support a Sankey-style flow diagram for value flow over time, or defer?
 9. **Partial Lightning settlement (MPP).** For NUT-08 `MELT` operations where Lightning settlement is partial (e.g., MPP under-delivery), is the correct representation: (a) a single `MELT_FAILED` with `partial=true` tag, or (b) a `MELT` for the settled portion plus a compensating refund event? The spec currently allows either; pick one before T2.x.
 10. **NIP-44 encrypted content for FULL mode over shared relays.** Section 7.2 reserves NIP-44 encrypted content as future work. Confirm whether v2 of this spec should adopt it; if so, decide whether ledger holds a long-term decryption key or rotates per-day session keys.
@@ -1294,6 +1326,7 @@ These require stakeholder input before or during implementation. Items closed du
 - ~~Historical backfill~~ — **CLOSED**: no backfill. Traceability starts at producer SDK adoption. Pre-SDK voucher events lack the raw `secret` required to derive `Y`, and partial DAGs would mislead operators.
 - ~~Federation / cross-instance ledger~~ — **CLOSED — DEFERRED** to §11. Intra-deployment cross-mint is handled via `transfer_id` (§5.3.2); cross-operator federation requires its own spec covering trust model, export format, and privacy contract.
 - ~~Voucher / traceability event publish ordering~~ — **CLOSED** by §5.7: voucher event (`kind 30078`) is published first and awaits relay ack before the trace event (`kind 9079`) with `voucher_ref` is published. Failed voucher publishes degrade to trace-without-`voucher_ref`; consumers tolerate either the trace alone or the voucher alone, but never a `voucher_ref` that resolves to nothing.
+- ~~Sanitised export for external sharing~~ — **CLOSED** by Section 7.5: sanitise tool re-redacts under a freshly generated ephemeral HMAC key; export and key are delivered separately; operator's `redaction_key` never leaves the deployment; `cashuB` bundle tokens stripped during sanitisation; sanitised exports carry `sanitised: true` and `ephemeral_key_id`.
 
 ## 11. Out of Scope (deferred)
 
@@ -1473,3 +1506,12 @@ Closes Open Question 4 by mandating that the voucher event is always published b
 
 - [Section 5.7] Added a "Voucher / trace event publish ordering" producer SDK rule.
 - [Section 10] Open Question 4 marked **CLOSED** in-place and added to the "Closed during review" subsection.
+
+### Round 12 — Sanitised export tool
+
+Closes Open Question 7 by specifying a sanitise tool that produces self-contained export packages re-redacted under a one-shot ephemeral HMAC key. The operator's deployment-scoped `redaction_key` never leaves the deployment, and the auditor's view is bounded to the export they were given.
+
+- [Section 5.6] Added `cashu-ledger trace export <anchor> --sanitise --output <dir>` CLI subcommand.
+- [Section 7.5 — new] "Sanitised Export for External Sharing" subsection defining the workflow (anchor selection → ephemeral key generation → re-redaction → two-artefact delivery), the auditor's verification scope (joins within the export only), the privacy contract (production `redaction_key` refused; `bundleToken` stripped because partial CBOR redaction is not safe; `sanitised: true` and `ephemeral_key_id` markers; `FULL` round-trip not preserved), and audit logging requirements.
+- [Section 7.6] Renumbered the previous "Cryptographic Considerations" subsection from 7.5 to 7.6 to make room.
+- [Section 10] Open Question 7 marked **CLOSED** in-place and added to the "Closed during review" subsection.
