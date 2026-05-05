@@ -476,6 +476,14 @@ The `content` JSON uses NUT-00 canonical proof field names (`id`, `C`, `secret`,
 
 **Privacy.** Issuer fields are NEVER hashed or omitted, even in `HASHED` or `MINIMAL` privacy modes. The voucher event itself publishes the issuer in plaintext on a relay, so redacting the same value on the trace event would not increase privacy and would break filter UX. This is recorded as a Section 5.2 exception and reinforced in Section 7.2.
 
+**Issuer-less event back-fill (decided).** A producer that publishes a `MINT` or `SWAP` before the corresponding voucher is issued cannot include `issuer_id` / `issuer_pubkey` at publish time. The spec adopts **option (c)**: a sidecar mapping `(keyset_id, Y) → issuer` is maintained in the SQLite index and back-filled when the voucher event later arrives, without emitting a Nostr correction event. Read responses where the issuer fields originate from the back-fill sidecar (rather than the raw event tags) MUST include the annotation `issuerProvenance: "index_backfill"` (versus the default `issuerProvenance: "event_tag"`) so consumers can audit the source. The other two options were rejected: (a) require callers to follow `voucher_ref` at read time — adds a round-trip per result, defeating the denormalisation in §5.3.1; (b) emit a `correction_of` event when the voucher arrives — doubles event volume for every issuer-less mint/swap and clutters the audit log with mechanical corrections. Option (c) preserves event volume but the raw signed event no longer matches the indexed query result; the explicit `issuerProvenance` annotation makes that divergence auditable rather than hidden.
+
+**Back-fill mechanics.** When a kind-30078 voucher event arrives carrying proofs (via `parentContributions` or its child voucher chain), the voucher-state watcher (§6.5) extracts `(keyset_id, Y) → (issuer_id, issuer_pubkey)` mappings and writes them to a `proof_issuer_backfill` sidecar table. The events index is then updated for any rows whose `(keyset_id, Y)` matches and whose `issuer_id` / `issuer_pubkey` are NULL. The raw nostrdb event is NOT modified — only the sidecar — so signature validity is preserved. The back-fill operation is logged at INFO with `issuer_backfill_completed proof_count=N voucher_id=<v-id>` per voucher.
+
+**Re-index on disagreement.** If a back-filled `(keyset_id, Y)` later receives a corrected voucher with a different issuer (rare but possible if the operator rebinds proofs), the sidecar is updated and a WARN is logged with `issuer_backfill_overwrite previous=<old> new=<new>`. The history of back-fill changes is NOT retained; consumers that need the full chain follow the `voucher_ref` link.
+
+(Closes Open Question 12.)
+
 #### 5.3.2 Multi-Mint and Cross-Mint Flows
 
 A single ledger deployment may serve multiple mints (each with its own `mint_url`). Multi-mint visualisation and cross-mint flow correlation are governed by these rules:
@@ -685,6 +693,7 @@ The `status` is computed as: `succeeded` if a terminal `MINT` or `MELT` event re
   "voucherRef": "v-1766748473969",
   "issuerId": "merchant-acme-store",
   "issuerPubkey": "9b4d2e1c3a5f6789...",
+  "issuerProvenance": "event_tag",
   "activity": "active",
   "activityReason": null,
   "activityChangedAt": null,
@@ -1316,7 +1325,7 @@ These require stakeholder input before or during implementation. Items closed du
 9. ~~**Partial Lightning settlement (MPP).**~~ **CLOSED** by adopting option (b): a `MELT` for the settled portion plus a paired `MELT_REFUND` carrying the unsettled remainder back to the user as fresh proofs. Option (a) — a single `MELT_FAILED` with `partial=true` — was rejected because `MELT_FAILED` semantics mark the proofs as never-spent in the DAG, but a partial MPP settlement DID burn the proofs that paid the settled portion at the mint. Option (b) preserves the accounting truth: the `MELT` records what actually burned, and the `MELT_REFUND` records the new fresh proofs minted to refund the unsettled balance. New `MELT_REFUND` operation kind, `LightningRef.partial=true` flag on both events, `B3_PARTIAL_SETTLEMENT` validation invariant, and a `partial-settlement-window` (default 60s) reconciliation timer are defined in §5.9.
 10. ~~**NIP-44 encrypted content for FULL mode over shared relays.**~~ **CLOSED — DEFERRED** to v2 of the spec. When adopted, the ledger MUST use **per-day rotating session keys** (not a long-term decryption key) per §7.2. Rotation bounds the blast radius of a key compromise to one day's events; the prior day's key remains read-only for a default 30-day retention window so ingest stays decryptable for retrospective review. The active key id is published via `GET /relays`; the key material is fetched by producers via a separate authenticated channel that the v2 spec will define.
 11. ~~**Pruning policy for terminal subgraphs.**~~ **CLOSED** by §5.11: sub-DAG terminality pruning is supported alongside age-based pruning. A sub-DAG is eligible for pruning when every leaf event has `activity=TERMINAL` per §5.4.1; the activity cache is the data source so no extra graph walk is required. The mode is configurable (`trace.pruning.terminal-subdag.enabled`, default on) and pauses automatically when the activity cache is stale to avoid over-pruning.
-12. **Issuer back-fill for issuer-less events.** A producer may publish a `MINT` or `SWAP` before the corresponding voucher is issued, leaving `issuer_id` and `issuer_pubkey` absent. Three strategies are possible: (a) accept that issuer-less events never gain issuer tags and require callers to follow the `voucher_ref` link at read time when a later voucher binds to the same proofs (one extra round-trip per result); (b) emit a `correction_of` event when the voucher arrives, denormalising the issuer into a corrected trace event (doubles event volume for the affected operations); (c) maintain a sidecar mapping of `(keyset_id, Y) → issuer` in the SQLite index and back-fill the index rows on voucher ingest without emitting a Nostr correction (preserves event volume, but the raw signed event no longer matches the indexed query result, which is a subtle audit hazard). Pick one before T2.x. Default lean: (c), with an explicit `issuer_provenance=index_backfill` annotation on responses where the source is the sidecar rather than the raw event.
+12. ~~**Issuer back-fill for issuer-less events.**~~ **CLOSED** by §5.3.1: option (c) selected. Sidecar mapping `(keyset_id, Y) → issuer` is maintained in SQLite and back-filled when the voucher event arrives; raw nostrdb events are unmodified (signature preserved). Read responses include `issuerProvenance: "event_tag" | "index_backfill"` so consumers can audit the source. Options (a) (extra read-time round-trip) and (b) (`correction_of` event for every back-fill) were rejected — (a) defeats the §5.3.1 denormalisation and (b) doubles event volume for mint/swap operations that precede voucher issuance.
 
 ### Closed during review
 
@@ -1336,6 +1345,7 @@ These require stakeholder input before or during implementation. Items closed du
 - ~~Partial Lightning settlement (MPP)~~ — **CLOSED** in favour of option (b): `MELT` for the settled portion plus a paired `MELT_REFUND` for the unsettled remainder. New `MELT_REFUND` operation kind, `LightningRef.partial` flag, `B3_PARTIAL_SETTLEMENT` validation invariant, and a 60s default `partial-settlement-window` reconciliation timer.
 - ~~NIP-44 encrypted content for FULL mode over shared relays~~ — **CLOSED — DEFERRED** to v2. When adopted, the ledger uses per-day rotating session keys (not a long-term key) with a 30-day default retention window for retrospective decryption; active key id advertised via `GET /relays`.
 - ~~Pruning policy for terminal sub-DAGs~~ — **CLOSED** by Section 5.11: sub-DAG terminality pruning is supported alongside age-based pruning, reading from the §5.4.1 activity cache, gated by `trace.pruning.terminal-subdag.enabled` (default on), and automatically paused when the activity cache is stale.
+- ~~Issuer back-fill for issuer-less events~~ — **CLOSED** by Section 5.3.1: option (c) selected. Sidecar `proof_issuer_backfill` table populated on voucher ingest; raw events unchanged; read responses carry `issuerProvenance: "event_tag" | "index_backfill"` so the source is auditable.
 
 ## 11. Out of Scope (deferred)
 
@@ -1555,3 +1565,13 @@ Closes Open Question 11 by supporting sub-DAG terminality pruning alongside age-
 
 - [Section 5.11] Added a "Sub-DAG terminality pruning" rule and a paired "Activity-cache dependency" rule covering the pause-when-stale safeguard and the corresponding WARN log line.
 - [Section 10] Open Question 11 marked **CLOSED** in-place and added to the "Closed during review" subsection.
+
+### Round 17 — Issuer back-fill strategy
+
+Closes Open Question 12 by selecting option (c): sidecar back-fill. When a producer publishes a `MINT` or `SWAP` before the corresponding voucher is issued, the trace event ships without `issuer_id` / `issuer_pubkey`. When the voucher event later arrives, the voucher-state watcher derives `(keyset_id, Y) → issuer` mappings into a `proof_issuer_backfill` SQLite table, and the events index is updated for matching rows. The raw signed Nostr event is NOT modified (signature preserved); the divergence between the raw event tags and the indexed query result is surfaced via a new `issuerProvenance: "event_tag" | "index_backfill"` field on read responses.
+
+Options (a) — require callers to follow `voucher_ref` at read time — and (b) — emit a `correction_of` event per back-fill — were rejected. (a) defeats the §5.3.1 denormalisation by adding a round-trip per result; (b) doubles event volume for every mint/swap that precedes voucher issuance and clutters the audit log with mechanical corrections.
+
+- [Section 5.3.1] Added "Issuer-less event back-fill (decided)", "Back-fill mechanics", and "Re-index on disagreement" subsections covering the sidecar table, the watcher integration with §6.5, the `issuerProvenance` annotation, and the WARN log line on overwrite.
+- [Section 5.5] Added `issuerProvenance` to the single-event response shape.
+- [Section 10] Open Question 12 marked **CLOSED** in-place and added to the "Closed during review" subsection.
