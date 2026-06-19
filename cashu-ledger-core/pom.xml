@@ -40,6 +40,19 @@
             <artifactId>cashu-voucher-domain</artifactId>
         </dependency>
 
+        <!-- Transaction-traceability schema + ports -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-ledger-trace-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- SQLite sidecar index for trace events -->
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+        </dependency>
+
         <!-- Logging -->
         <dependency>
             <groupId>org.slf4j</groupId>
