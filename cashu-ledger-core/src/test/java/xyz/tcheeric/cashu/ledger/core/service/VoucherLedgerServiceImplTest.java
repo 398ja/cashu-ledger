@@ -1,6 +1,5 @@
 package xyz.tcheeric.cashu.ledger.core.service;
 
-import nostr.base.ElementAttribute;
 import nostr.base.PublicKey;
 import nostr.event.impl.GenericEvent;
 import nostr.event.tag.GenericTag;
@@ -26,8 +25,8 @@ class VoucherLedgerServiceImplTest {
         event.setPubKey(new PublicKey("b".repeat(64)));
         event.setKind(30078);
         event.setTags(List.of(
-                new GenericTag("d", List.of(new ElementAttribute(null, "v-777"))),
-                new GenericTag("status", List.of(new ElementAttribute(null, "issued")))
+                new GenericTag("d", List.of("v-777")),
+                new GenericTag("status", List.of("issued"))
         ));
 
         StubRelayConnectionManager stubRelay = new StubRelayConnectionManager(event);

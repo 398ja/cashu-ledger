@@ -6,9 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
-import nostr.client.springwebsocket.SpringWebSocketClient;
-import nostr.client.springwebsocket.StandardWebSocketClient;
-import nostr.client.springwebsocket.WebSocketClientIF;
+import nostr.client.springwebsocket.NostrRelayClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import xyz.tcheeric.cashu.ledger.trace.core.NostrEventMetadata;
@@ -27,7 +25,7 @@ public final class TraceSyncEngine implements AutoCloseable {
     private final TraceIngestService ingestService;
     private final ObjectMapper mapper = new ObjectMapper();
     private final List<AutoCloseable> subscriptions = new ArrayList<>();
-    private final List<SpringWebSocketClient> clients = new ArrayList<>();
+    private final List<NostrRelayClient> clients = new ArrayList<>();
     private final ReentrantLock lock = new ReentrantLock();
 
     public TraceSyncEngine(TraceIngestService ingestService) {
@@ -38,8 +36,7 @@ public final class TraceSyncEngine implements AutoCloseable {
     public void subscribe(String relayUrl) {
         lock.lock();
         try {
-            WebSocketClientIF raw = new StandardWebSocketClient(relayUrl);
-            SpringWebSocketClient client = new SpringWebSocketClient(raw, relayUrl);
+            NostrRelayClient client = new NostrRelayClient(relayUrl);
             String subscriptionId = "trace-" + UUID.randomUUID().toString().substring(0, 8);
             // Raw REQ filter for kind 9079 — built directly because nostr-java's Kind
             // enum does not recognise this application-specific kind.
@@ -88,7 +85,7 @@ public final class TraceSyncEngine implements AutoCloseable {
             for (AutoCloseable subscription : subscriptions) {
                 closeQuietly(subscription);
             }
-            for (SpringWebSocketClient client : clients) {
+            for (NostrRelayClient client : clients) {
                 closeQuietly(client);
             }
             subscriptions.clear();

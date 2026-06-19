@@ -1,6 +1,5 @@
 package xyz.tcheeric.cashu.ledger.e2e;
 
-import nostr.base.ElementAttribute;
 import nostr.base.PublicKey;
 import nostr.base.Signature;
 import nostr.event.BaseTag;
@@ -516,11 +515,7 @@ class StorageCachingE2ETest {
     }
 
     private BaseTag createTag(String code, String... values) {
-        List<ElementAttribute> attrs = new ArrayList<>();
-        for (String value : values) {
-            attrs.add(new ElementAttribute(null, value));
-        }
-        return new GenericTag(code, attrs);
+        return new GenericTag(code, java.util.Arrays.asList(values));
     }
 
     private String generateEventId(String seed) {
@@ -652,7 +647,7 @@ class StorageCachingE2ETest {
         private String extractVoucherId(GenericEvent event) {
             return event.getTags().stream()
                     .filter(t -> t instanceof GenericTag g && "d".equals(g.getCode()))
-                    .map(t -> ((GenericTag) t).getAttributes().get(0).value().toString())
+                    .map(t -> ((GenericTag) t).getParams().get(0))
                     .findFirst()
                     .orElse(null);
         }

@@ -1,6 +1,5 @@
 package xyz.tcheeric.cashu.ledger.core.storage;
 
-import nostr.base.ElementAttribute;
 import nostr.base.PublicKey;
 import nostr.base.Signature;
 import nostr.event.BaseTag;
@@ -324,9 +323,6 @@ class NostrDbEventStoreTest {
     }
 
     private BaseTag tag(String code, String... values) {
-        List<ElementAttribute> attrs = java.util.Arrays.stream(values)
-                .map(v -> new ElementAttribute(null, v))
-                .toList();
-        return new GenericTag(code, attrs);
+        return new GenericTag(code, java.util.Arrays.asList(values));
     }
 }

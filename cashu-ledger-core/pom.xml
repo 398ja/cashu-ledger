@@ -16,10 +16,10 @@
     <description>Core domain and services for the cashu-ledger CLI</description>
 
     <dependencies>
-        <!-- Nostr relay connectivity -->
+        <!-- Nostr relay connectivity (nostr-java 2.x: core + event + client) -->
         <dependency>
             <groupId>xyz.tcheeric</groupId>
-            <artifactId>nostr-java-client</artifactId>
+            <artifactId>nostr-java-core</artifactId>
         </dependency>
         <dependency>
             <groupId>xyz.tcheeric</groupId>
@@ -27,11 +27,7 @@
         </dependency>
         <dependency>
             <groupId>xyz.tcheeric</groupId>
-            <artifactId>nostr-java-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>xyz.tcheeric</groupId>
-            <artifactId>nostr-java-base</artifactId>
+            <artifactId>nostr-java-client</artifactId>
         </dependency>
 
         <!-- Voucher domain helpers -->

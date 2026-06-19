@@ -38,10 +38,10 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
-        <!-- Schnorr signing (transitively brings nostr-java-crypto/util/base) -->
+        <!-- Schnorr signing + hex utils (nostr-java 2.x core module) -->
         <dependency>
             <groupId>xyz.tcheeric</groupId>
-            <artifactId>nostr-java-event</artifactId>
+            <artifactId>nostr-java-core</artifactId>
         </dependency>
 
         <!-- Test -->

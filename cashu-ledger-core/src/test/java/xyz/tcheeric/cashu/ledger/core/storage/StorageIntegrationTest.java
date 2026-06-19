@@ -1,6 +1,5 @@
 package xyz.tcheeric.cashu.ledger.core.storage;
 
-import nostr.base.ElementAttribute;
 import nostr.base.PublicKey;
 import nostr.base.Signature;
 import nostr.event.impl.GenericEvent;
@@ -350,8 +349,8 @@ class StorageIntegrationTest {
         event.setCreatedAt(Instant.now().getEpochSecond());
         event.setContent("{}");
         event.setTags(List.of(
-                new GenericTag("d", List.of(new ElementAttribute(null, "voucher:" + voucherId))),
-                new GenericTag("status", List.of(new ElementAttribute(null, status)))
+                new GenericTag("d", List.of("voucher:" + voucherId)),
+                new GenericTag("status", List.of(status))
         ));
         return event;
     }
@@ -359,7 +358,7 @@ class StorageIntegrationTest {
     private GenericEvent createVoucherEventWithParent(String voucherId, String status, String parentId) {
         GenericEvent event = createVoucherEvent(voucherId, status);
         List<nostr.event.BaseTag> tags = new ArrayList<>(event.getTags());
-        tags.add(new GenericTag("parent", List.of(new ElementAttribute(null, parentId))));
+        tags.add(new GenericTag("parent", List.of(parentId)));
         event.setTags(tags);
         return event;
     }
@@ -373,7 +372,7 @@ class StorageIntegrationTest {
     private String extractVoucherId(GenericEvent event) {
         return event.getTags().stream()
                 .filter(t -> t instanceof GenericTag g && "d".equals(g.getCode()))
-                .map(t -> ((GenericTag) t).getAttributes().get(0).value().toString())
+                .map(t -> ((GenericTag) t).getParams().get(0))
                 .map(d -> d.startsWith("voucher:") ? d.substring(8) : d)
                 .findFirst()
                 .orElse(null);

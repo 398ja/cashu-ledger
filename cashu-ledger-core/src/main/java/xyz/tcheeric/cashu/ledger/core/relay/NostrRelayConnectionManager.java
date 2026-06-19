@@ -4,19 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import nostr.base.PublicKey;
-import nostr.client.springwebsocket.SpringWebSocketClient;
-import nostr.client.springwebsocket.StandardWebSocketClient;
-import nostr.client.springwebsocket.WebSocketClientIF;
+import nostr.client.springwebsocket.NostrRelayClient;
 import nostr.event.BaseTag;
-import nostr.event.filter.Filterable;
-import nostr.event.filter.Filters;
-import nostr.event.filter.IdentifierTagFilter;
-import nostr.event.filter.KindFilter;
+import nostr.event.filter.EventFilter;
 import nostr.event.impl.GenericEvent;
 import nostr.event.message.CloseMessage;
 import nostr.event.message.ReqMessage;
 import nostr.event.tag.GenericTag;
-import nostr.base.ElementAttribute;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -33,7 +27,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Relay connection manager backed by nostr-java WebSocket client.
+ * Relay connection manager backed by the nostr-java 2.x WebSocket client
+ * ({@link NostrRelayClient}).
  *
  * <p>ClientContext instances are cached in the clients map for connection reuse
  * and are explicitly closed via {@link #disconnect()} or {@link #closeAndRemoveClient(String)}.
@@ -151,7 +146,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
     }
 
     private List<RelayEvent> queryBatchForRelay(
-            SpringWebSocketClient client,
+            NostrRelayClient client,
             String relayUrl,
             Set<String> voucherIds
     ) throws InterruptedException, IOException {
@@ -159,9 +154,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         CountDownLatch eoseLatch = new CountDownLatch(1);
         List<RelayEvent> found = new ArrayList<>();
 
-        // Build filter with multiple d-tags
-        Filters filters = buildBatchFilters(voucherIds);
-        ReqMessage reqMessage = new ReqMessage(subscriptionId, List.of(filters));
+        ReqMessage reqMessage = new ReqMessage(subscriptionId, batchFilter(voucherIds));
 
         client.subscribe(
                 reqMessage,
@@ -189,19 +182,16 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         return found;
     }
 
-    private Filters buildBatchFilters(Set<String> voucherIds) {
-        List<Filterable> filterables = new ArrayList<>();
-        filterables.add(new KindFilter<>(nostr.base.Kind.valueOf(VOUCHER_KIND)));
-
-        // Add multiple d-tag filters - Nostr protocol supports OR within a single filter
+    private EventFilter batchFilter(Set<String> voucherIds) {
+        List<String> dTags = new ArrayList<>();
         for (String voucherId : voucherIds) {
-            String dTagValue = voucherId.startsWith(D_TAG_PREFIX) ? voucherId : D_TAG_PREFIX + voucherId;
-            filterables.add(new IdentifierTagFilter<>(new nostr.event.tag.IdentifierTag(dTagValue)));
+            dTags.add(voucherId.startsWith(D_TAG_PREFIX) ? voucherId : D_TAG_PREFIX + voucherId);
         }
-
-        Filters filters = new Filters(filterables);
-        filters.setLimit(voucherIds.size());
-        return filters;
+        return new EventFilter.Builder()
+                .kind(VOUCHER_KIND)
+                .addTagFilter("d", dTags)
+                .limit(voucherIds.size())
+                .build();
     }
 
     private Optional<String> extractVoucherId(GenericEvent event) {
@@ -210,17 +200,13 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         }
         for (BaseTag tag : event.getTags()) {
             if (tag instanceof GenericTag genericTag && "d".equals(genericTag.getCode())) {
-                List<ElementAttribute> attrs = genericTag.getAttributes();
-                if (attrs != null && !attrs.isEmpty()) {
-                    Object val = attrs.getFirst().value();
-                    if (val != null) {
-                        String dTag = val.toString();
-                        // Remove the prefix if present
-                        if (dTag.startsWith(D_TAG_PREFIX)) {
-                            return Optional.of(dTag.substring(D_TAG_PREFIX.length()));
-                        }
-                        return Optional.of(dTag);
+                List<String> params = genericTag.getParams();
+                if (params != null && !params.isEmpty() && params.getFirst() != null) {
+                    String dTag = params.getFirst();
+                    if (dTag.startsWith(D_TAG_PREFIX)) {
+                        return Optional.of(dTag.substring(D_TAG_PREFIX.length()));
                     }
+                    return Optional.of(dTag);
                 }
             }
         }
@@ -387,14 +373,13 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         }
     }
 
-    private Optional<GenericEvent> querySingleRelay(SpringWebSocketClient client, String relayUrl, String voucherId)
+    private Optional<GenericEvent> querySingleRelay(NostrRelayClient client, String relayUrl, String voucherId)
             throws InterruptedException, IOException {
         String subscriptionId = "voucher-" + UUID.randomUUID().toString().substring(0, 8);
         CountDownLatch eoseLatch = new CountDownLatch(1);
         AtomicReference<GenericEvent> found = new AtomicReference<>();
 
-        Filters filters = buildFilters(voucherId);
-        ReqMessage reqMessage = new ReqMessage(subscriptionId, List.of(filters));
+        ReqMessage reqMessage = new ReqMessage(subscriptionId, voucherFilter(voucherId, 1));
 
         client.subscribe(
                 reqMessage,
@@ -415,7 +400,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
     }
 
     private List<RelayEvent> queryChildrenForRelay(
-            SpringWebSocketClient client,
+            NostrRelayClient client,
             String relayUrl,
             String parentVoucherId,
             int limit
@@ -424,8 +409,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         CountDownLatch eoseLatch = new CountDownLatch(1);
         List<RelayEvent> found = new ArrayList<>();
 
-        Filters filters = buildChildFilters(limit);
-        ReqMessage reqMessage = new ReqMessage(subscriptionId, List.of(filters));
+        ReqMessage reqMessage = new ReqMessage(subscriptionId, kindFilter(limit));
 
         client.subscribe(
                 reqMessage,
@@ -453,7 +437,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
     }
 
     private List<RelayEvent> queryVoucherEventsForRelay(
-            SpringWebSocketClient client,
+            NostrRelayClient client,
             String relayUrl,
             String voucherId,
             int limit
@@ -462,9 +446,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         CountDownLatch eoseLatch = new CountDownLatch(1);
         List<RelayEvent> found = new ArrayList<>();
 
-        Filters filters = buildFilters(voucherId);
-        filters.setLimit(limit);
-        ReqMessage reqMessage = new ReqMessage(subscriptionId, List.of(filters));
+        ReqMessage reqMessage = new ReqMessage(subscriptionId, voucherFilter(voucherId, limit));
 
         client.subscribe(
                 reqMessage,
@@ -492,7 +474,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
     }
 
     private List<RelayEvent> queryAllVouchersForRelay(
-            SpringWebSocketClient client,
+            NostrRelayClient client,
             String relayUrl,
             int limit
     ) throws InterruptedException, IOException {
@@ -500,8 +482,7 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         CountDownLatch eoseLatch = new CountDownLatch(1);
         List<RelayEvent> found = new ArrayList<>();
 
-        Filters filters = buildKindOnlyFilters(limit);
-        ReqMessage reqMessage = new ReqMessage(subscriptionId, List.of(filters));
+        ReqMessage reqMessage = new ReqMessage(subscriptionId, kindFilter(limit));
 
         client.subscribe(
                 reqMessage,
@@ -539,50 +520,27 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         }
     }
 
-    private Filters buildFilters(String voucherId) {
-        List<Filterable> filterables = new ArrayList<>();
-        filterables.add(new KindFilter<>(nostr.base.Kind.valueOf(VOUCHER_KIND)));
-        // Add prefix to voucherId to match d-tag format: "voucher:<voucherId>"
+    private EventFilter voucherFilter(String voucherId, int limit) {
         String dTagValue = voucherId.startsWith(D_TAG_PREFIX) ? voucherId : D_TAG_PREFIX + voucherId;
-        filterables.add(new IdentifierTagFilter<>(new nostr.event.tag.IdentifierTag(dTagValue)));
-        Filters filters = new Filters(filterables);
-        filters.setLimit(1);
-        return filters;
+        return new EventFilter.Builder()
+                .kind(VOUCHER_KIND)
+                .addTagFilter("d", dTagValue)
+                .limit(Math.max(1, limit))
+                .build();
     }
 
-    private Filters buildChildFilters(int limit) {
-        List<Filterable> filterables = new ArrayList<>();
-        filterables.add(new KindFilter<>(nostr.base.Kind.valueOf(VOUCHER_KIND)));
-        Filters filters = new Filters(filterables);
-        filters.setLimit(Math.max(1, limit));
-        return filters;
-    }
-
-    private Filters buildKindOnlyFilters(int limit) {
-        List<Filterable> filterables = new ArrayList<>();
-        filterables.add(new KindFilter<>(nostr.base.Kind.valueOf(VOUCHER_KIND)));
-        Filters filters = new Filters(filterables);
-        filters.setLimit(Math.max(1, limit));
-        return filters;
+    private EventFilter kindFilter(int limit) {
+        return new EventFilter.Builder()
+                .kind(VOUCHER_KIND)
+                .limit(Math.max(1, limit))
+                .build();
     }
 
     private ClientContext createClient(String relayUrl) {
         long awaitTimeoutMs = queryTimeout.toMillis();
-        long pollIntervalMs = 500L;
-        WebSocketClientIF webSocketClient = null;
         try {
-            webSocketClient = new StandardWebSocketClient(relayUrl, awaitTimeoutMs, pollIntervalMs);
-            SpringWebSocketClient client = new SpringWebSocketClient(webSocketClient, relayUrl);
-            return new ClientContext(webSocketClient, client);
+            return new ClientContext(new NostrRelayClient(relayUrl, awaitTimeoutMs));
         } catch (Exception e) {
-            // Close the raw WebSocket client if SpringWebSocketClient creation failed
-            if (webSocketClient != null) {
-                try {
-                    webSocketClient.close();
-                } catch (Exception closeEx) {
-                    log.debug("websocket_cleanup_failed relay={} error={}", relayUrl, closeEx.getMessage());
-                }
-            }
             throw new IllegalStateException("Failed to create WebSocket client for relay: " + relayUrl, e);
         }
     }
@@ -621,12 +579,12 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
                 for (JsonNode tagArray : eventNode.get("tags")) {
                     if (tagArray.isArray() && tagArray.size() > 0) {
                         String tagCode = tagArray.get(0).asText();
-                        List<nostr.base.ElementAttribute> attrs = new ArrayList<>();
-                        // Start from index 1 - index 0 is the tag code, not an attribute
+                        List<String> params = new ArrayList<>();
+                        // Start from index 1 - index 0 is the tag code, not a param
                         for (int i = 1; i < tagArray.size(); i++) {
-                            attrs.add(new nostr.base.ElementAttribute(null, tagArray.get(i).asText()));
+                            params.add(tagArray.get(i).asText());
                         }
-                        tags.add(new GenericTag(tagCode, attrs));
+                        tags.add(new GenericTag(tagCode, params));
                     }
                 }
                 event.setTags(tags);
@@ -645,19 +603,16 @@ public class NostrRelayConnectionManager implements RelayConnectionManager {
         }
         for (BaseTag tag : event.getTags()) {
             if (tag instanceof GenericTag genericTag && "parent".equals(genericTag.getCode())) {
-                List<ElementAttribute> attrs = genericTag.getAttributes();
-                if (attrs != null && !attrs.isEmpty()) {
-                    Object val = attrs.getFirst().value();
-                    if (val != null && parentVoucherId.equals(val.toString())) {
-                        return true;
-                    }
+                List<String> params = genericTag.getParams();
+                if (params != null && !params.isEmpty() && parentVoucherId.equals(params.getFirst())) {
+                    return true;
                 }
             }
         }
         return false;
     }
 
-    private record ClientContext(WebSocketClientIF rawClient, SpringWebSocketClient client) implements AutoCloseable {
+    private record ClientContext(NostrRelayClient client) implements AutoCloseable {
         @Override
         public void close() {
             try {

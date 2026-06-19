@@ -27,7 +27,7 @@
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <nostr-java.version>1.2.1</nostr-java.version>
+        <nostr-java.version>2.0.7</nostr-java.version>
         <nostrdb-jni.version>0.1.1</nostrdb-jni.version>
         <cashu-voucher.version>0.5.0</cashu-voucher.version>
         <picocli.version>4.7.6</picocli.version>
@@ -105,14 +105,10 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <!-- nostr-java 2.x modules (the umbrella BOM is not published to this repo) -->
             <dependency>
                 <groupId>xyz.tcheeric</groupId>
-                <artifactId>nostr-java-base</artifactId>
-                <version>${nostr-java.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>xyz.tcheeric</groupId>
-                <artifactId>nostr-java-crypto</artifactId>
+                <artifactId>nostr-java-core</artifactId>
                 <version>${nostr-java.version}</version>
             </dependency>
             <dependency>
@@ -122,22 +118,12 @@
             </dependency>
             <dependency>
                 <groupId>xyz.tcheeric</groupId>
-                <artifactId>nostr-java-id</artifactId>
-                <version>${nostr-java.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>xyz.tcheeric</groupId>
-                <artifactId>nostr-java-util</artifactId>
+                <artifactId>nostr-java-identity</artifactId>
                 <version>${nostr-java.version}</version>
             </dependency>
             <dependency>
                 <groupId>xyz.tcheeric</groupId>
                 <artifactId>nostr-java-client</artifactId>
-                <version>${nostr-java.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>xyz.tcheeric</groupId>
-                <artifactId>nostr-java-api</artifactId>
                 <version>${nostr-java.version}</version>
             </dependency>
             <dependency>

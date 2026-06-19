@@ -159,10 +159,10 @@ public class NostrDbEventStore implements EventStore {
             if (code != null) {
                 tagList.add(code);
             }
-            if (genericTag.getAttributes() != null) {
-                for (var attr : genericTag.getAttributes()) {
-                    if (attr != null && attr.value() != null) {
-                        tagList.add(attr.value().toString());
+            if (genericTag.getParams() != null) {
+                for (String param : genericTag.getParams()) {
+                    if (param != null) {
+                        tagList.add(param);
                     }
                 }
             }
@@ -426,11 +426,11 @@ public class NostrDbEventStore implements EventStore {
             for (List<String> tagList : note.tags()) {
                 if (!tagList.isEmpty()) {
                     String tagCode = tagList.get(0);
-                    List<nostr.base.ElementAttribute> attributes = new ArrayList<>();
+                    List<String> params = new ArrayList<>();
                     for (int i = 1; i < tagList.size(); i++) {
-                        attributes.add(new nostr.base.ElementAttribute(null, tagList.get(i)));
+                        params.add(tagList.get(i));
                     }
-                    genericTags.add(new nostr.event.tag.GenericTag(tagCode, attributes));
+                    genericTags.add(new nostr.event.tag.GenericTag(tagCode, params));
                 }
             }
             event.setTags(genericTags);
