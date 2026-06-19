@@ -104,7 +104,15 @@ class TraceRelaySyncIntegrationTest {
         syncEngine = new TraceSyncEngine(ingest);
         syncEngine.subscribe(wsUrl);
 
-        // Act: publish the signed event to the relay as a raw EVENT frame
+        // Act: publish the signed event to the relay as a raw EVENT frame.
+        // The subscribe/ingest side uses nostr-java (TraceSyncEngine), but the
+        // publish here uses a raw WebSocket deliberately: this test must transmit
+        // OUR exact canonical bytes verbatim to prove the relay validates the
+        // signature over our CanonicalJson serialisation. Re-encoding through a
+        // nostr-java GenericEvent would test the library's bytes, not ours, and
+        // would change the event id. When the production NostrRelayPublisher exists
+        // (it must also send the pre-signed bytes verbatim to preserve idempotency),
+        // this test will publish through it instead. (Option iii.)
         String ok = publishAndAwaitOk(wsUrl, "[\"EVENT\"," + signed.eventJson() + "]", signed.eventId());
 
         // Then: the relay accepted it (relay-compatible signature)
