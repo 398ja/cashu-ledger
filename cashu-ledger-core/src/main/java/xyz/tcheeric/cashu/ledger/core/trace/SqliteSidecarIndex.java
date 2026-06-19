@@ -173,8 +173,17 @@ public final class SqliteSidecarIndex implements AutoCloseable {
         }
     }
 
-    /** General filtered listing (design §5.5). Cursor pagination is applied by the query service. */
+    /** General filtered listing (design §5.5), without a cursor. */
     public List<String> findFiltered(TraceEventQuery q) {
+        return findFiltered(q, null);
+    }
+
+    /**
+     * General filtered listing with optional seek cursor. Results are ordered
+     * {@code (transition_at DESC, event_id DESC)}; {@code after}, when present, returns
+     * only rows strictly older than that position.
+     */
+    public List<String> findFiltered(TraceEventQuery q, Cursor after) {
         StringBuilder sql = new StringBuilder("SELECT event_id FROM events_index WHERE 1=1");
         List<Object> args = new ArrayList<>();
         q.mintUrl().ifPresent(v -> { sql.append(" AND mint_url = ?"); args.add(v); });
@@ -190,6 +199,12 @@ public final class SqliteSidecarIndex implements AutoCloseable {
         q.since().ifPresent(v -> { sql.append(" AND transition_at_ms >= ?"); args.add(v.toEpochMilli()); });
         q.until().ifPresent(v -> { sql.append(" AND transition_at_ms < ?"); args.add(v.toEpochMilli()); });
         q.activity().ifPresent(v -> { sql.append(" AND activity = ?"); args.add(v == EventActivity.TERMINAL ? "terminal" : "active"); });
+        if (after != null) {
+            sql.append(" AND (transition_at_ms < ? OR (transition_at_ms = ? AND event_id < ?))");
+            args.add(after.transitionAtMs());
+            args.add(after.transitionAtMs());
+            args.add(after.eventId());
+        }
         sql.append(" ORDER BY transition_at_ms DESC, event_id DESC LIMIT ?");
         args.add(q.limit());
 
@@ -199,6 +214,51 @@ public final class SqliteSidecarIndex implements AutoCloseable {
             return collectEventIds(ps);
         } catch (SQLException ex) {
             throw new TraceStorageException("Failed filtered listing", ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Distinct {@code (mint_url, keyset_id)} pairs that carry a proof with this {@code y}. */
+    public List<ProofCandidate> candidatesForY(String y) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT DISTINCT mint_url, keyset_id FROM proof_ref WHERE y = ? ORDER BY mint_url, keyset_id")) {
+            ps.setString(1, y);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<ProofCandidate> candidates = new ArrayList<>();
+                while (rs.next()) {
+                    candidates.add(new ProofCandidate(rs.getString(1), rs.getString(2)));
+                }
+                return candidates;
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed y-candidate lookup", ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Chronological (oldest-first) input/output occurrences of a proof tuple. */
+    public List<ProofRefRow> proofRefRows(String mintUrl, String keysetId, String y) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT pr.event_id, pr.role, e.transition_at_ms FROM proof_ref pr "
+                        + "JOIN events_index e ON e.event_id = pr.event_id "
+                        + "WHERE pr.mint_url = ? AND pr.keyset_id = ? AND pr.y = ? "
+                        + "ORDER BY e.transition_at_ms ASC, e.event_id ASC")) {
+            ps.setString(1, mintUrl);
+            ps.setString(2, keysetId);
+            ps.setString(3, y);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<ProofRefRow> rows = new ArrayList<>();
+                while (rs.next()) {
+                    rows.add(new ProofRefRow(rs.getString(1), rs.getString(2), rs.getLong(3)));
+                }
+                return rows;
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed proof-ref row lookup", ex);
         } finally {
             lock.unlock();
         }

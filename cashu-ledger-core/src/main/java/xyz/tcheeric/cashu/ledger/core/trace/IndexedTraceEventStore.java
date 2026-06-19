@@ -117,7 +117,8 @@ public final class IndexedTraceEventStore implements TraceEventStore {
 
     @Override
     public List<StoredEvent> findFiltered(TraceEventQuery query) {
-        return resolve(index.findFiltered(query));
+        Cursor after = query.cursor().flatMap(Cursor::decode).orElse(null);
+        return resolve(index.findFiltered(query, after));
     }
 
     @Override
