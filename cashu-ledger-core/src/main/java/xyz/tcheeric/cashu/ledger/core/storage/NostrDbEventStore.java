@@ -35,6 +35,8 @@ public class NostrDbEventStore implements EventStore {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int VOUCHER_KIND = 30078;
     private static final String VOUCHER_D_TAG_PREFIX = "voucher:";
+    /** nostrdb caps query limits at 100,000,000; use it as the "all rows" bound. */
+    private static final int MAX_QUERY_LIMIT = 100_000_000;
 
     private final EventStoreConfig config;
     private final Ndb ndb;
@@ -374,10 +376,10 @@ public class NostrDbEventStore implements EventStore {
         try (Transaction txn = ndb.beginTransaction();
              Filter filter = Filter.builder()
                      .kinds(VOUCHER_KIND)
-                     .limit(Integer.MAX_VALUE)
+                     .limit(MAX_QUERY_LIMIT)
                      .build()) {
 
-            List<Note> notes = ndb.queryNotes(txn, filter, Integer.MAX_VALUE);
+            List<Note> notes = ndb.queryNotes(txn, filter, MAX_QUERY_LIMIT);
             long voucherCount = notes.size();
 
             // Estimate database size from directory
