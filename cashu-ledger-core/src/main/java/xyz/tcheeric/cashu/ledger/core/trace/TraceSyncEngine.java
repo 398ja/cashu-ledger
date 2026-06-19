@@ -6,16 +6,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
-import nostr.base.Kind;
 import nostr.client.springwebsocket.SpringWebSocketClient;
 import nostr.client.springwebsocket.StandardWebSocketClient;
 import nostr.client.springwebsocket.WebSocketClientIF;
-import nostr.event.filter.Filterable;
-import nostr.event.filter.Filters;
-import nostr.event.filter.KindFilter;
-import nostr.event.message.ReqMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import xyz.tcheeric.cashu.ledger.trace.core.NostrEventMetadata;
 
 /**
  * Subscribes to kind-9079 trace events on the configured relays and feeds each
@@ -26,6 +22,7 @@ import org.slf4j.LoggerFactory;
 public final class TraceSyncEngine implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TraceSyncEngine.class);
+    private static final int TRACE_KIND = NostrEventMetadata.TRACE_EVENT_KIND;
 
     private final TraceIngestService ingestService;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -44,9 +41,9 @@ public final class TraceSyncEngine implements AutoCloseable {
             WebSocketClientIF raw = new StandardWebSocketClient(relayUrl);
             SpringWebSocketClient client = new SpringWebSocketClient(raw, relayUrl);
             String subscriptionId = "trace-" + UUID.randomUUID().toString().substring(0, 8);
-            List<Filterable> filterables = new ArrayList<>();
-            filterables.add(new KindFilter<>(Kind.valueOf(9079)));
-            ReqMessage req = new ReqMessage(subscriptionId, List.of(new Filters(filterables)));
+            // Raw REQ filter for kind 9079 — built directly because nostr-java's Kind
+            // enum does not recognise this application-specific kind.
+            String req = "[\"REQ\",\"" + subscriptionId + "\",{\"kinds\":[" + TRACE_KIND + "]}]";
 
             AutoCloseable subscription = client.subscribe(
                     req,
