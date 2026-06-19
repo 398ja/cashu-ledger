@@ -85,6 +85,21 @@ public final class SqliteSidecarIndex implements AutoCloseable {
             st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_idx_op ON events_index (operation_id)");
             st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_idx_activity ON events_index (activity, transition_at_ms)");
             st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_pr_lookup ON proof_ref (role, mint_url, keyset_id, y)");
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS voucher_status (
+                      voucher_id    TEXT PRIMARY KEY,
+                      status        TEXT NOT NULL,
+                      state_version INTEGER NOT NULL,
+                      transition_at_s INTEGER NOT NULL,
+                      terminal      INTEGER NOT NULL DEFAULT 0,
+                      issuer_id     TEXT,
+                      issuer_pubkey TEXT
+                    )""");
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS watcher_cursor (
+                      name     TEXT PRIMARY KEY,
+                      position INTEGER NOT NULL
+                    )""");
         }
     }
 
@@ -147,6 +162,108 @@ public final class SqliteSidecarIndex implements AutoCloseable {
                 ps.addBatch();
             }
             ps.executeBatch();
+        }
+    }
+
+    /**
+     * Records a voucher-state observation, keeping the highest {@code state_version}
+     * seen. Returns {@code true} only when this observation moves the voucher into a
+     * terminal status for the first time (the trigger for activity-cache invalidation).
+     */
+    public boolean upsertVoucherStatus(VoucherStatusObservation obs) {
+        lock.lock();
+        try {
+            long existingVersion = -1L;
+            boolean wasTerminal = false;
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "SELECT state_version, terminal FROM voucher_status WHERE voucher_id = ?")) {
+                ps.setString(1, obs.voucherId());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        existingVersion = rs.getLong(1);
+                        wasTerminal = rs.getInt(2) == 1;
+                    }
+                }
+            }
+            if (obs.stateVersion() <= existingVersion) {
+                return false; // stale or duplicate revision
+            }
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "INSERT INTO voucher_status (voucher_id, status, state_version, transition_at_s, "
+                            + "terminal, issuer_id, issuer_pubkey) VALUES (?,?,?,?,?,?,?) "
+                            + "ON CONFLICT(voucher_id) DO UPDATE SET status=excluded.status, "
+                            + "state_version=excluded.state_version, transition_at_s=excluded.transition_at_s, "
+                            + "terminal=excluded.terminal, issuer_id=excluded.issuer_id, "
+                            + "issuer_pubkey=excluded.issuer_pubkey")) {
+                ps.setString(1, obs.voucherId());
+                ps.setString(2, obs.status());
+                ps.setLong(3, obs.stateVersion());
+                ps.setLong(4, obs.transitionAt().getEpochSecond());
+                ps.setInt(5, obs.terminal() ? 1 : 0);
+                ps.setString(6, obs.issuerId().orElse(null));
+                ps.setString(7, obs.issuerPubkey().orElse(null));
+                ps.executeUpdate();
+            }
+            return obs.terminal() && !wasTerminal;
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to record voucher status " + obs.voucherId(), ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** The latest recorded status for a voucher, if any has been observed. */
+    public Optional<VoucherStatusObservation> loadVoucherStatus(String voucherId) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT status, state_version, transition_at_s, terminal, issuer_id, issuer_pubkey "
+                        + "FROM voucher_status WHERE voucher_id = ?")) {
+            ps.setString(1, voucherId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(new VoucherStatusObservation(
+                        voucherId, rs.getString(1), rs.getLong(2),
+                        Instant.ofEpochSecond(rs.getLong(3)), rs.getInt(4) == 1,
+                        Optional.ofNullable(rs.getString(5)), Optional.ofNullable(rs.getString(6))));
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to load voucher status " + voucherId, ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Loads a named watcher cursor position (e.g. a relay's last-seen created_at). */
+    public Optional<Long> loadCursor(String name) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT position FROM watcher_cursor WHERE name = ?")) {
+            ps.setString(1, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(rs.getLong(1)) : Optional.empty();
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to load watcher cursor " + name, ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Persists a named watcher cursor position. */
+    public void saveCursor(String name, long position) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT INTO watcher_cursor (name, position) VALUES (?,?) "
+                        + "ON CONFLICT(name) DO UPDATE SET position=excluded.position")) {
+            ps.setString(1, name);
+            ps.setLong(2, position);
+            ps.executeUpdate();
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to save watcher cursor " + name, ex);
+        } finally {
+            lock.unlock();
         }
     }
 
