@@ -12,6 +12,7 @@
     <description>Standalone CLI for inspecting vouchers on Nostr relays</description>
 
     <modules>
+        <module>cashu-ledger-trace-core</module>
         <module>cashu-ledger-core</module>
         <module>cashu-ledger-cli</module>
         <module>cashu-ledger-web</module>
@@ -23,7 +24,7 @@
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <nostr-java.version>1.2.0</nostr-java.version>
+        <nostr-java.version>1.2.1</nostr-java.version>
         <nostrdb-jni.version>0.1.1</nostrdb-jni.version>
         <cashu-voucher.version>0.5.0</cashu-voucher.version>
         <picocli.version>4.7.6</picocli.version>
@@ -31,12 +32,14 @@
         <logback.version>1.5.18</logback.version>
         <!-- Jackson version managed by Spring Boot BOM -->
         <lombok.version>1.18.40</lombok.version>
+        <sqlite.jdbc.version>3.47.1.0</sqlite.jdbc.version>
         <maven.shade.plugin.version>3.6.0</maven.shade.plugin.version>
         <spring.boot.version>3.5.9</spring.boot.version>
 
         <junit.version>5.12.2</junit.version>
         <assertj.version>3.27.4</assertj.version>
         <mockito.version>5.19.0</mockito.version>
+        <jqwik.version>1.9.2</jqwik.version>
         <maven.surefire.plugin.version>3.5.2</maven.surefire.plugin.version>
         <jib.version>3.4.4</jib.version>
     </properties>
@@ -185,6 +188,17 @@
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok</artifactId>
                 <version>${lombok.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.jqwik</groupId>
+                <artifactId>jqwik</artifactId>
+                <version>${jqwik.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.xerial</groupId>
+                <artifactId>sqlite-jdbc</artifactId>
+                <version>${sqlite.jdbc.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
