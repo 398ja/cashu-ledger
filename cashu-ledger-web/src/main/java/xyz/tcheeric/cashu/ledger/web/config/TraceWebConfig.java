@@ -3,11 +3,13 @@ package xyz.tcheeric.cashu.ledger.web.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import xyz.tcheeric.cashu.ledger.core.trace.EdgeDeriver;
 import xyz.tcheeric.cashu.ledger.core.trace.IndexedTraceEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.InMemoryRawEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.RawEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.SqliteSidecarIndex;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceQueryService;
+import xyz.tcheeric.cashu.ledger.core.trace.WalkService;
 import xyz.tcheeric.cashu.ledger.trace.core.TraceEventStore;
 
 /**
@@ -38,5 +40,15 @@ public class TraceWebConfig {
     @Bean
     public TraceQueryService traceQueryService(TraceEventStore store, SqliteSidecarIndex index) {
         return new TraceQueryService(store, index);
+    }
+
+    @Bean
+    public EdgeDeriver traceEdgeDeriver(TraceEventStore store) {
+        return new EdgeDeriver(store);
+    }
+
+    @Bean
+    public WalkService traceWalkService(TraceEventStore store, EdgeDeriver edgeDeriver) {
+        return new WalkService(store, edgeDeriver);
     }
 }

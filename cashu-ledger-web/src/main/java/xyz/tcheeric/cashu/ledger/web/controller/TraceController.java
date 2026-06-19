@@ -12,9 +12,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import java.util.List;
+import java.util.Map;
 import xyz.tcheeric.cashu.ledger.core.trace.EventPage;
+import xyz.tcheeric.cashu.ledger.core.trace.ProofCandidate;
 import xyz.tcheeric.cashu.ledger.core.trace.ProofHistory;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceQueryService;
+import xyz.tcheeric.cashu.ledger.core.trace.WalkResult;
+import xyz.tcheeric.cashu.ledger.core.trace.WalkService;
 import xyz.tcheeric.cashu.ledger.trace.core.EventActivity;
 import xyz.tcheeric.cashu.ledger.trace.core.IndexStatus;
 import xyz.tcheeric.cashu.ledger.trace.core.OperationKind;
@@ -41,12 +46,14 @@ public class TraceController {
     private final TraceQueryService queryService;
     private final TraceEventStore store;
     private final TraceResponseMapper mapper;
+    private final WalkService walkService;
 
     public TraceController(TraceQueryService queryService, TraceEventStore store,
-                          TraceResponseMapper mapper) {
+                          TraceResponseMapper mapper, WalkService walkService) {
         this.queryService = queryService;
         this.store = store;
         this.mapper = mapper;
+        this.walkService = walkService;
     }
 
     @GetMapping("/events")
@@ -120,6 +127,48 @@ public class TraceController {
         return noStore().body(history);
     }
 
+    @GetMapping("/proofs/{y}/walk")
+    public ResponseEntity<Object> proofWalk(
+            HttpServletRequest request,
+            @PathVariable("y") String y,
+            @RequestParam(name = "mintUrl", required = false) String mintUrl,
+            @RequestParam(name = "keysetId", required = false) String keysetId,
+            @RequestParam(name = "direction", required = false, defaultValue = "down") String direction,
+            @RequestParam(name = "depth", required = false, defaultValue = "10") int depth,
+            @RequestParam(name = "limit", required = false, defaultValue = "1000") int limit) {
+
+        TracePrincipal principal = principal(request);
+        WalkService.Direction dir = walkDirection(direction);
+
+        ProofCandidate target;
+        if (mintUrl != null && keysetId != null) {
+            target = new ProofCandidate(mintUrl, keysetId);
+        } else {
+            List<ProofCandidate> candidates = matchingCandidates(y, mintUrl);
+            if (candidates.size() > 1) {
+                audit(principal, "/proofs/" + y + "/walk", y, candidates.size(), false);
+                return ResponseEntity.status(409).header(HttpHeaders.CACHE_CONTROL, "no-store")
+                        .body(Map.of(
+                                "error", "AMBIGUOUS_PROOF",
+                                "message", "Proof y resolves to multiple (mintUrl, keysetId) pairs; "
+                                        + "supply both to disambiguate.",
+                                "candidates", candidates));
+            }
+            if (candidates.isEmpty()) {
+                WalkResult empty = new WalkResult(dir.name().toLowerCase(), depth,
+                        List.of(), List.of(), false, Optional.empty(), 0);
+                audit(principal, "/proofs/" + y + "/walk", y, 0, false);
+                return noStore().body(empty);
+            }
+            target = candidates.get(0);
+        }
+
+        WalkResult result = walkService.walkFromProof(
+                target.mintUrl(), target.keysetId(), y, dir, depth, limit);
+        audit(principal, "/proofs/" + y + "/walk", y, result.nodes().size(), false);
+        return noStore().body(result);
+    }
+
     @GetMapping("/stats")
     public ResponseEntity<IndexStatus> stats(HttpServletRequest request) {
         TracePrincipal principal = principal(request);
@@ -137,6 +186,22 @@ public class TraceController {
         boolean revealed = !"minimal".equals(view.returnedPrivacyMode());
         audit(principal, anchor, anchor, 1, revealed);
         return noStore().body(view);
+    }
+
+    private List<ProofCandidate> matchingCandidates(String y, String mintUrl) {
+        List<ProofCandidate> candidates = queryService.candidatesForY(y);
+        if (mintUrl == null) {
+            return candidates;
+        }
+        return candidates.stream().filter(c -> mintUrl.equals(c.mintUrl())).toList();
+    }
+
+    private static WalkService.Direction walkDirection(String direction) {
+        return switch (direction.toLowerCase()) {
+            case "up" -> WalkService.Direction.UP;
+            case "both" -> WalkService.Direction.BOTH;
+            default -> WalkService.Direction.DOWN;
+        };
     }
 
     private static Optional<EventActivity> activityFilter(String activity) {
