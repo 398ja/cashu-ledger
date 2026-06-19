@@ -7,3 +7,6 @@
 /.claude/
 /.specify/
 /specs/
+
+# jqwik property-test database
+.jqwik-database
