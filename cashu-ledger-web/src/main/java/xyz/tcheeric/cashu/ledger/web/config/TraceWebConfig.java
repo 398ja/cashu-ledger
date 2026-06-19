@@ -1,8 +1,10 @@
 package xyz.tcheeric.cashu.ledger.web.config;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import xyz.tcheeric.cashu.ledger.web.security.TraceIssuerProperties;
 import xyz.tcheeric.cashu.ledger.core.trace.EdgeDeriver;
 import xyz.tcheeric.cashu.ledger.core.trace.IndexedTraceEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.InMemoryRawEventStore;
@@ -19,6 +21,7 @@ import xyz.tcheeric.cashu.ledger.trace.core.TraceEventStore;
  * follow-up (this checkpoint covers the read API).
  */
 @Configuration
+@EnableConfigurationProperties(TraceIssuerProperties.class)
 public class TraceWebConfig {
 
     @Bean(destroyMethod = "close")

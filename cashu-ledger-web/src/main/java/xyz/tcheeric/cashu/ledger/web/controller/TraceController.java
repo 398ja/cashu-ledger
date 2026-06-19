@@ -169,6 +169,36 @@ public class TraceController {
         return noStore().body(result);
     }
 
+    @GetMapping("/vouchers/{voucherId}/events")
+    public ResponseEntity<EventPageView> voucherEvents(
+            HttpServletRequest request,
+            @PathVariable("voucherId") String voucherId,
+            @RequestParam(name = "activity", required = false) String activity,
+            @RequestParam(name = "limit", required = false) Integer limit,
+            @RequestParam(name = "cursor", required = false) String cursor) {
+        TracePrincipal principal = principal(request);
+        EventPage page = queryService.findByVoucherRef(voucherId, activityFilter(activity),
+                pageLimit(limit), Optional.ofNullable(cursor));
+        return pageResponse(principal, page, "/vouchers/" + voucherId + "/events", voucherId);
+    }
+
+    @GetMapping("/issuers/{issuerId}/events")
+    public ResponseEntity<EventPageView> issuerEvents(
+            HttpServletRequest request,
+            @PathVariable("issuerId") String issuerId,
+            @RequestParam(name = "byPubkey", required = false, defaultValue = "false") boolean byPubkey,
+            @RequestParam(name = "activity", required = false) String activity,
+            @RequestParam(name = "limit", required = false) Integer limit,
+            @RequestParam(name = "cursor", required = false) String cursor) {
+        TracePrincipal principal = principal(request);
+        Optional<EventActivity> activityFilter = activityFilter(activity);
+        Optional<String> cursorValue = Optional.ofNullable(cursor);
+        EventPage page = byPubkey
+                ? queryService.findByIssuerPubkey(issuerId, activityFilter, pageLimit(limit), cursorValue)
+                : queryService.findByIssuerId(issuerId, activityFilter, pageLimit(limit), cursorValue);
+        return pageResponse(principal, page, "/issuers/" + issuerId + "/events", issuerId);
+    }
+
     @GetMapping("/stats")
     public ResponseEntity<IndexStatus> stats(HttpServletRequest request) {
         TracePrincipal principal = principal(request);
@@ -186,6 +216,19 @@ public class TraceController {
         boolean revealed = !"minimal".equals(view.returnedPrivacyMode());
         audit(principal, anchor, anchor, 1, revealed);
         return noStore().body(view);
+    }
+
+    private ResponseEntity<EventPageView> pageResponse(TracePrincipal principal, EventPage page,
+                                                       String endpoint, String anchor) {
+        EventPageView view = new EventPageView(
+                mapper.toViews(page.events(), principal), page.nextCursor().orElse(null));
+        boolean revealed = view.events().stream().anyMatch(v -> !"minimal".equals(v.returnedPrivacyMode()));
+        audit(principal, endpoint, anchor, page.events().size(), revealed);
+        return noStore().body(view);
+    }
+
+    private static int pageLimit(Integer limit) {
+        return limit != null ? limit : TraceEventQuery.DEFAULT_LIMIT;
     }
 
     private List<ProofCandidate> matchingCandidates(String y, String mintUrl) {

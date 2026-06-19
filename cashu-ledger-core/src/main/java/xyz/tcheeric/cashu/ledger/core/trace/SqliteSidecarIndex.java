@@ -443,6 +443,28 @@ public final class SqliteSidecarIndex implements AutoCloseable {
         }
     }
 
+    /** The indexed issuer attribution for an event, including back-filled values. */
+    public Optional<IssuerAttribution> issuerOf(String eventId) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT issuer_id, issuer_pubkey, issuer_backfilled FROM events_index WHERE event_id=?")) {
+            ps.setString(1, eventId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next()
+                        ? Optional.of(new IssuerAttribution(rs.getString(1), rs.getString(2), rs.getInt(3) == 1))
+                        : Optional.empty();
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to read issuer for " + eventId, ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** An event's indexed issuer attribution and whether it came from the back-fill sidecar. */
+    public record IssuerAttribution(String issuerId, String issuerPubkey, boolean backfilled) {
+    }
+
     /** Whether an event's issuer fields originate from the back-fill sidecar. */
     public boolean isIssuerBackfilled(String eventId) {
         lock.lock();

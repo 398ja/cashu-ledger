@@ -24,7 +24,9 @@ public record EventView(
         String voucherRef,
         String issuerId,
         String issuerPubkey,
+        String issuerProvenance,
         String activity,
+        String activityReason,
         Long feeAmount,
         String returnedPrivacyMode,
         int schemaVersion
