@@ -150,14 +150,24 @@ public final class CanonicalJson {
                 content(event));
     }
 
-    /** Computes the Nostr event id from already-prepared components. */
+    /** Computes the kind-9079 Nostr event id from already-prepared components. */
     public static String eventId(String pubkey, long createdAtSeconds,
+                                 List<List<String>> tags, String content) {
+        return eventId(pubkey, createdAtSeconds, NostrEventMetadata.TRACE_EVENT_KIND, tags, content);
+    }
+
+    /**
+     * Computes a Nostr event id for any kind via the NIP-01 serialisation
+     * {@code [0, pubkey, created_at, kind, tags, content]}. Reused for the NIP-98
+     * (kind 27235) auth event so verification uses the same proven serialiser.
+     */
+    public static String eventId(String pubkey, long createdAtSeconds, int kind,
                                  List<List<String>> tags, String content) {
         List<Object> serial = new ArrayList<>(6);
         serial.add(0L);
         serial.add(pubkey);
         serial.add(createdAtSeconds);
-        serial.add((long) NostrEventMetadata.TRACE_EVENT_KIND);
+        serial.add((long) kind);
         serial.add(new ArrayList<Object>(tags));
         serial.add(content);
         byte[] bytes = write(serial).getBytes(StandardCharsets.UTF_8);
