@@ -17,6 +17,8 @@
         <module>cashu-ledger-core</module>
         <module>cashu-ledger-cli</module>
         <module>cashu-ledger-web</module>
+        <module>cashu-ledger-integration-tests</module>
+        <module>cashu-ledger-e2e-tests</module>
     </modules>
 
     <properties>
@@ -42,6 +44,11 @@
         <mockito.version>5.19.0</mockito.version>
         <jqwik.version>1.9.2</jqwik.version>
         <testcontainers.version>1.21.3</testcontainers.version>
+
+        <!-- The test-only modules are always part of the reactor (so IDEs import
+             them), but their tests run only under the matching profile below. -->
+        <skip.integration.tests>true</skip.integration.tests>
+        <skip.e2e.tests>true</skip.e2e.tests>
         <maven.surefire.plugin.version>3.5.2</maven.surefire.plugin.version>
         <jib.version>3.4.4</jib.version>
     </properties>
@@ -262,15 +269,15 @@
         </profile>
         <profile>
             <id>integration-tests</id>
-            <modules>
-                <module>cashu-ledger-integration-tests</module>
-            </modules>
+            <properties>
+                <skip.integration.tests>false</skip.integration.tests>
+            </properties>
         </profile>
         <profile>
             <id>e2e-tests</id>
-            <modules>
-                <module>cashu-ledger-e2e-tests</module>
-            </modules>
+            <properties>
+                <skip.e2e.tests>false</skip.e2e.tests>
+            </properties>
         </profile>
     </profiles>
 </project>

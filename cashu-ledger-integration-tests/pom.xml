@@ -57,4 +57,19 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Always in the reactor (so IDEs import this module), but the
+                 integration tests run only with -P integration-tests (which sets
+                 skip.integration.tests=false). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <skipTests>${skip.integration.tests}</skipTests>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>
