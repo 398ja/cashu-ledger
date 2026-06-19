@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import xyz.tcheeric.cashu.ledger.trace.core.EventActivity;
 import xyz.tcheeric.cashu.ledger.trace.core.OperationKind;
 import xyz.tcheeric.cashu.ledger.trace.core.StoredEvent;
 import xyz.tcheeric.cashu.ledger.trace.core.TraceEventQuery;
@@ -50,6 +51,35 @@ public final class TraceQueryService {
     /** The distinct {@code (mintUrl, keysetId)} pairs that carry this {@code y}. */
     public List<ProofCandidate> candidatesForY(String y) {
         return index.candidatesForY(y);
+    }
+
+    /** Cursor-paginated events that reference a given voucher, newest first. */
+    public EventPage findByVoucherRef(String voucherRef, Optional<EventActivity> activity,
+                                      int limit, Optional<String> cursor) {
+        TraceEventQuery.Builder b = listingBuilder(activity, limit, cursor).voucherRef(voucherRef);
+        return listEvents(b.build());
+    }
+
+    /** Cursor-paginated events attributed to a given issuer id, newest first. */
+    public EventPage findByIssuerId(String issuerId, Optional<EventActivity> activity,
+                                    int limit, Optional<String> cursor) {
+        TraceEventQuery.Builder b = listingBuilder(activity, limit, cursor).issuerId(issuerId);
+        return listEvents(b.build());
+    }
+
+    /** Cursor-paginated events attributed to a given issuer pubkey, newest first. */
+    public EventPage findByIssuerPubkey(String issuerPubkey, Optional<EventActivity> activity,
+                                        int limit, Optional<String> cursor) {
+        TraceEventQuery.Builder b = listingBuilder(activity, limit, cursor).issuerPubkey(issuerPubkey);
+        return listEvents(b.build());
+    }
+
+    private static TraceEventQuery.Builder listingBuilder(Optional<EventActivity> activity,
+                                                          int limit, Optional<String> cursor) {
+        TraceEventQuery.Builder b = TraceEventQuery.builder().limit(limit);
+        activity.ifPresent(b::activity);
+        cursor.ifPresent(b::cursor);
+        return b;
     }
 
     /**
