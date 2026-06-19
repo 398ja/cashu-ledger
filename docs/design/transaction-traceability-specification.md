@@ -1267,9 +1267,9 @@ Each phase is independently shippable. Tasks track in the same per-task table st
 
 | ID    | Task                                                                                  | Size | Depends On  | Status  | Commit |
 |-------|---------------------------------------------------------------------------------------|------|-------------|---------|--------|
-| T4.1  | `TraceQueryService` in `cashu-ledger-core`                                            | L    | T3.x        | Pending | -      |
-| T4.2  | REST controllers under `/api/v1/trace` in `cashu-ledger-web` with NIP-98 auth         | L    | T4.1        | Pending | -      |
-| T4.3  | Authority resolution (`trace:read:summary` / `:hashed` / `:full` / `trace:admin`)     | M    | T4.2        | Pending | -      |
+| T4.1  | `TraceQueryService` in `cashu-ledger-core`                                            | L    | T3.x        | Done    | 540eb15 — cursor pagination + grouped proof history |
+| T4.2  | REST controllers under `/api/v1/trace` in `cashu-ledger-web` with NIP-98 auth         | L    | T4.1        | Done    | 77c10ea — events/event/operation/proofs/stats + access-level shaping; quote/walk/visualisation endpoints follow with their stories |
+| T4.3  | Authority resolution (`trace:read:summary` / `:hashed` / `:full` / `trace:admin`)     | M    | T4.2        | Done    | dedb0b2 — NIP-98 filter + AuthorityResolver + access shaping |
 | T4.4  | SSE endpoint `/api/v1/trace/stream` for live ingestion notifications                  | M    | T4.2        | Pending | -      |
 | T4.5  | OpenAPI spec generation                                                                | S    | T4.2        | Pending | -      |
 
