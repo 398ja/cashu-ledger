@@ -1259,7 +1259,7 @@ Each phase is independently shippable. Tasks track in the same per-task table st
 | ID    | Task                                                                                  | Size | Depends On  | Status  | Commit |
 |-------|---------------------------------------------------------------------------------------|------|-------------|---------|--------|
 | T3.1  | Implement `TraceEventStore` (nostrdb + SQLite sidecar) with kind-9079 indexes          | L    | T1.x        | Partial | dec818a — SQLite sidecar + IndexedTraceEventStore over a pluggable RawEventStore; nostrdb-backed RawEventStore adapter deferred |
-| T3.2  | `TraceSyncEngine` mirroring the `ClientSyncEngine` pattern                            | L    | T3.1        | Pending | -      |
+| T3.2  | `TraceSyncEngine` mirroring the `ClientSyncEngine` pattern                            | L    | T3.1        | Done    | ad302e4, 5d93600 — kind-9079 subscription + ingest service; relay-backed Testcontainers integration test (T038) proves relay-compat |
 | T3.3  | Cross-link with voucher events: index `voucher_ref` and surface in voucher detail     | M    | T3.1        | Pending | -      |
 | T3.4  | `EVENT_PRUNED` audit emission and configurable retention                              | M    | T3.1        | Pending | -      |
 
