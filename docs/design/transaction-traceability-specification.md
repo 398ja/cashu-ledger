@@ -1239,17 +1239,17 @@ Each phase is independently shippable. Tasks track in the same per-task table st
 
 | ID    | Task                                                                                  | Size | Depends On | Status  | Commit |
 |-------|---------------------------------------------------------------------------------------|------|------------|---------|--------|
-| T1.1  | Add `cashu-ledger-trace-core` module with `OperationKind`, `ProofRef`, `TransactionEvent`, `PrivacyMode` records | M    | -          | Pending | -      |
-| T1.2  | Define Nostr event schema (kind 9079) + canonical JSON serialiser                      | M    | T1.1       | Pending | -      |
-| T1.3  | Reserve / document the kind via internal ADR; add `schema_version` plumbing            | S    | T1.2       | Pending | -      |
-| T1.4  | Unit tests for canonical serialisation, redaction, deterministic event id              | M    | T1.2       | Pending | -      |
+| T1.1  | Add `cashu-ledger-trace-core` module with `OperationKind`, `ProofRef`, `TransactionEvent`, `PrivacyMode` records | M    | -          | Done    | d77b415 |
+| T1.2  | Define Nostr event schema (kind 9079) + canonical JSON serialiser                      | M    | T1.1       | Done    | d77b415 |
+| T1.3  | Reserve / document the kind via internal ADR; add `schema_version` plumbing            | S    | T1.2       | Partial | d77b415 — `schema_version` plumbed (`CURRENT_SCHEMA_VERSION` + tag); kind-9079 ADR not yet written |
+| T1.4  | Unit tests for canonical serialisation, redaction, deterministic event id              | M    | T1.2       | Done    | d77b415 — golden per-kind id vectors deferred |
 
 ### Phase T2: Producer SDK
 
 | ID    | Task                                                                                  | Size | Depends On  | Status  | Commit |
 |-------|---------------------------------------------------------------------------------------|------|-------------|---------|--------|
-| T2.1  | Add `cashu-ledger-trace-publisher` module with `TraceabilityPublisher` API            | M    | T1.x        | Pending | -      |
-| T2.2  | `OutboxStore` abstraction + `InMemoryOutboxStore` + `SqliteOutboxStore`                | L    | T2.1        | Pending | -      |
+| T2.1  | Add `cashu-ledger-trace-publisher` module with `TraceabilityPublisher` API            | M    | T1.x        | Partial | eb90d5c — module + outbox/op-id added; `TraceabilityPublisher` API lands in 3b |
+| T2.2  | `OutboxStore` abstraction + `InMemoryOutboxStore` + `SqliteOutboxStore`                | L    | T2.1        | Done    | eb90d5c |
 | T2.3  | `OutboxDispatcher` with backoff and metrics                                            | M    | T2.2        | Pending | -      |
 | T2.4  | Spring Boot autoconfigure starter for the publisher                                   | S    | T2.3        | Pending | -      |
 | T2.5  | OpenTelemetry instrumentation                                                          | S    | T2.3        | Pending | -      |
