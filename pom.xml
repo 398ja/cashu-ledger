@@ -13,6 +13,7 @@
 
     <modules>
         <module>cashu-ledger-trace-core</module>
+        <module>cashu-ledger-trace-publisher</module>
         <module>cashu-ledger-core</module>
         <module>cashu-ledger-cli</module>
         <module>cashu-ledger-web</module>
