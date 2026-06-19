@@ -1248,9 +1248,9 @@ Each phase is independently shippable. Tasks track in the same per-task table st
 
 | ID    | Task                                                                                  | Size | Depends On  | Status  | Commit |
 |-------|---------------------------------------------------------------------------------------|------|-------------|---------|--------|
-| T2.1  | Add `cashu-ledger-trace-publisher` module with `TraceabilityPublisher` API            | M    | T1.x        | Partial | eb90d5c — module + outbox/op-id added; `TraceabilityPublisher` API lands in 3b |
+| T2.1  | Add `cashu-ledger-trace-publisher` module with `TraceabilityPublisher` API            | M    | T1.x        | Done    | eb90d5c, 6f57677 — module/outbox/op-id then signer + DefaultTraceabilityPublisher + RelayPublisher SPI |
 | T2.2  | `OutboxStore` abstraction + `InMemoryOutboxStore` + `SqliteOutboxStore`                | L    | T2.1        | Done    | eb90d5c |
-| T2.3  | `OutboxDispatcher` with backoff and metrics                                            | M    | T2.2        | Pending | -      |
+| T2.3  | `OutboxDispatcher` with backoff and metrics                                            | M    | T2.2        | Done    | 6f57677 — backoff + drain; live nostr-java RelayPublisher impl + adaptive cadence deferred |
 | T2.4  | Spring Boot autoconfigure starter for the publisher                                   | S    | T2.3        | Pending | -      |
 | T2.5  | OpenTelemetry instrumentation                                                          | S    | T2.3        | Pending | -      |
 
