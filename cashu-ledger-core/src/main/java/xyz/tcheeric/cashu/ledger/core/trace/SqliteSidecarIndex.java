@@ -61,7 +61,8 @@ public final class SqliteSidecarIndex implements AutoCloseable {
                       bundle_id       TEXT,
                       transfer_id     TEXT,
                       activity        TEXT NOT NULL DEFAULT 'active',
-                      activity_reason TEXT
+                      activity_reason TEXT,
+                      activity_changed_at INTEGER
                     )""");
             st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS proof_ref (
@@ -262,6 +263,110 @@ public final class SqliteSidecarIndex implements AutoCloseable {
             ps.executeUpdate();
         } catch (SQLException ex) {
             throw new TraceStorageException("Failed to save watcher cursor " + name, ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Flips one event to terminal with the given reason. Returns {@code true} if it changed. */
+    public boolean markEventTerminal(String eventId, String reason, long changedAtS) {
+        return update("UPDATE events_index SET activity='terminal', activity_reason=?, "
+                        + "activity_changed_at=? WHERE event_id=? AND activity!='terminal'",
+                reason, changedAtS, eventId) > 0;
+    }
+
+    /** Bulk-flips every event bound to a voucher to terminal. Returns the rows changed. */
+    public int markVoucherEventsTerminal(String voucherRef, String reason, long changedAtS) {
+        return update("UPDATE events_index SET activity='terminal', activity_reason=?, "
+                        + "activity_changed_at=? WHERE voucher_ref=? AND activity!='terminal'",
+                reason, changedAtS, voucherRef);
+    }
+
+    /** Flips the open quote-only events for a settled/expired quote. Returns the rows changed. */
+    public int markQuoteEventsTerminal(String mintUrl, String quoteId, String reason, long changedAtS) {
+        return update("UPDATE events_index SET activity='terminal', activity_reason=?, "
+                        + "activity_changed_at=? WHERE quote_id=? AND activity!='terminal' "
+                        + "AND op IN ('mint_quote_requested','melt_quote_requested')",
+                reason, changedAtS, mintUrl + "::" + quoteId);
+    }
+
+    /** The {@code (activity, activity_reason)} for an event, if indexed. */
+    public Optional<ActivityState> activityOf(String eventId) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT activity, activity_reason FROM events_index WHERE event_id=?")) {
+            ps.setString(1, eventId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next()
+                        ? Optional.of(new ActivityState(rs.getString(1), Optional.ofNullable(rs.getString(2))))
+                        : Optional.empty();
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to read activity for " + eventId, ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** The activity classification of an indexed event. */
+    public record ActivityState(String activity, Optional<String> reason) {
+        public boolean isTerminal() {
+            return "terminal".equals(activity);
+        }
+    }
+
+    /** The event whose output carries this proof tuple, if indexed. */
+    public Optional<String> producerEventOf(String mintUrl, String keysetId, String y) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT event_id FROM proof_ref WHERE role='output' AND mint_url=? AND keyset_id=? AND y=? "
+                        + "LIMIT 1")) {
+            ps.setString(1, mintUrl);
+            ps.setString(2, keysetId);
+            ps.setString(3, y);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(rs.getString(1)) : Optional.empty();
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to resolve producer of proof " + y, ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Whether an event has at least one output and every output has been consumed as an input. */
+    public boolean allOutputsSpent(String eventId) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT COUNT(*) total, SUM(CASE WHEN EXISTS (SELECT 1 FROM proof_ref i "
+                        + "WHERE i.role='input' AND i.mint_url=o.mint_url AND i.keyset_id=o.keyset_id "
+                        + "AND i.y=o.y) THEN 1 ELSE 0 END) spent "
+                        + "FROM proof_ref o WHERE o.event_id=? AND o.role='output'")) {
+            ps.setString(1, eventId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return false;
+                }
+                long total = rs.getLong("total");
+                long spent = rs.getLong("spent");
+                return total > 0 && spent == total;
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to evaluate spent outputs for " + eventId, ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private int update(String sql, String reason, long changedAtS, String key) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, reason);
+            ps.setLong(2, changedAtS);
+            ps.setString(3, key);
+            return ps.executeUpdate();
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to update activity for " + key, ex);
         } finally {
             lock.unlock();
         }
