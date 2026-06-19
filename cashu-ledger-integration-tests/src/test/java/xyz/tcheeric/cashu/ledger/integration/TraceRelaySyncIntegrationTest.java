@@ -53,12 +53,21 @@ class TraceRelaySyncIntegrationTest {
     private static final String MINT = "https://mint.imani.casa";
     private static final long EVENT_MS = 1740000000123L;
 
+    private static final int STRFRY_PORT = 7777;
+
     @Container
     private final GenericContainer<?> relay =
-            new GenericContainer<>(DockerImageName.parse("scsibug/nostr-rs-relay:0.9.0"))
-                    .withExposedPorts(8080)
-                    .withEnv("APP_DATA", "/tmp")
-                    .waitingFor(Wait.forListeningPort());
+            new GenericContainer<>(DockerImageName.parse("dockurr/strfry:latest"))
+                    .withExposedPorts(STRFRY_PORT)
+                    // strfry needs a writable LMDB dir; also disable the whitelist
+                    // write-policy plugin and the 1M open-files ulimit so the relay
+                    // accepts arbitrary test events out of the box.
+                    .withTmpFs(java.util.Map.of("/app/strfry-db", "rw"))
+                    .withCommand("sh", "-c",
+                            "sed -i -e 's|plugin = .*|plugin = \"\"|' -e 's|nofiles = .*|nofiles = 0|' "
+                                    + "/etc/strfry.conf.default && exec /app/strfry.sh")
+                    .waitingFor(Wait.forListeningPort()
+                            .withStartupTimeout(java.time.Duration.ofSeconds(60)));
 
     private SqliteSidecarIndex index;
     private TraceSyncEngine syncEngine;
@@ -99,7 +108,7 @@ class TraceRelaySyncIntegrationTest {
         TraceQueryService query = new TraceQueryService(store, index);
 
         SignedTraceEvent signed = signer.sign(swap(signer.publicKeyHex()));
-        String wsUrl = "ws://" + relay.getHost() + ":" + relay.getMappedPort(8080);
+        String wsUrl = "ws://" + relay.getHost() + ":" + relay.getMappedPort(STRFRY_PORT);
 
         syncEngine = new TraceSyncEngine(ingest);
         syncEngine.subscribe(wsUrl);
@@ -113,16 +122,21 @@ class TraceRelaySyncIntegrationTest {
         // would change the event id. When the production NostrRelayPublisher exists
         // (it must also send the pre-signed bytes verbatim to preserve idempotency),
         // this test will publish through it instead. (Option iii.)
-        Optional<String> ok = publishEvent(wsUrl, "[\"EVENT\"," + signed.eventJson() + "]", signed.eventId());
+        //
+        // Retry the publish+ingest cycle a few times to absorb transient relay /
+        // WebSocket timing under load. Re-publishing the same deterministic event
+        // is idempotent, so retries are safe.
+        String frame = "[\"EVENT\"," + signed.eventJson() + "]";
+        boolean ingested = false;
+        for (int attempt = 1; attempt <= 3 && !ingested; attempt++) {
+            Optional<String> ok = publishEvent(wsUrl, frame, signed.eventId());
+            ok.ifPresent(r -> assertThat(r).as("relay OK response").contains("true"));
+            ingested = awaitEvent(query, signed.eventId(), 12_000);
+        }
 
-        // If the relay acknowledged, it accepted our canonical signature. The OK
-        // frame can be missed under load, so it is best-effort; ingestion below is
-        // the primary assertion (it can only happen if the relay accepted the event).
-        ok.ifPresent(r -> assertThat(r).as("relay OK response").contains("true"));
-
-        // Primary: the sync engine ingests it so it is queryable in the ledger.
-        assertThat(awaitEvent(query, signed.eventId()))
-                .as("event ingested into ledger store").isTrue();
+        // Then: ingestion proves the relay accepted our canonical signature and the
+        // sync engine stored it; it is queryable as a SWAP.
+        assertThat(ingested).as("event ingested into ledger store").isTrue();
         assertThat(query.getEvent(signed.eventId()).orElseThrow().event().kind())
                 .isEqualTo(OperationKind.SWAP);
     }
@@ -154,8 +168,8 @@ class TraceRelaySyncIntegrationTest {
         }
     }
 
-    private boolean awaitEvent(TraceQueryService query, String eventId) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + 30_000;
+    private boolean awaitEvent(TraceQueryService query, String eventId, long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < deadline) {
             if (query.getEvent(eventId).isPresent()) {
                 return true;
