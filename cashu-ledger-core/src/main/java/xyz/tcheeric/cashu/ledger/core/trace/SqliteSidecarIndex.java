@@ -62,7 +62,8 @@ public final class SqliteSidecarIndex implements AutoCloseable {
                       transfer_id     TEXT,
                       activity        TEXT NOT NULL DEFAULT 'active',
                       activity_reason TEXT,
-                      activity_changed_at INTEGER
+                      activity_changed_at INTEGER,
+                      issuer_backfilled INTEGER NOT NULL DEFAULT 0
                     )""");
             st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS proof_ref (
@@ -100,6 +101,15 @@ public final class SqliteSidecarIndex implements AutoCloseable {
                     CREATE TABLE IF NOT EXISTS watcher_cursor (
                       name     TEXT PRIMARY KEY,
                       position INTEGER NOT NULL
+                    )""");
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS proof_issuer_backfill (
+                      mint_url      TEXT NOT NULL,
+                      keyset_id     TEXT NOT NULL,
+                      y             TEXT NOT NULL,
+                      issuer_id     TEXT,
+                      issuer_pubkey TEXT,
+                      PRIMARY KEY (mint_url, keyset_id, y)
                     )""");
         }
     }
@@ -370,6 +380,88 @@ public final class SqliteSidecarIndex implements AutoCloseable {
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * Maps a proof tuple to an issuer in the back-fill sidecar and applies it to any
+     * indexed events referencing that proof whose issuer is unset (or itself back-filled).
+     * The raw event is never modified. Returns the outcome, the prior issuer on overwrite,
+     * and the number of event rows updated.
+     */
+    public IssuerBackfillResult applyIssuerBackfill(String mintUrl, String keysetId, String y,
+                                                    String issuerId, String issuerPubkey) {
+        lock.lock();
+        try {
+            String previous = null;
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "SELECT issuer_id FROM proof_issuer_backfill WHERE mint_url=? AND keyset_id=? AND y=?")) {
+                ps.setString(1, mintUrl);
+                ps.setString(2, keysetId);
+                ps.setString(3, y);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        previous = rs.getString(1);
+                    }
+                }
+            }
+            IssuerBackfillResult.Outcome outcome;
+            if (previous == null) {
+                outcome = IssuerBackfillResult.Outcome.APPLIED;
+            } else if (previous.equals(issuerId)) {
+                outcome = IssuerBackfillResult.Outcome.UNCHANGED;
+            } else {
+                outcome = IssuerBackfillResult.Outcome.OVERWRITTEN;
+            }
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "INSERT INTO proof_issuer_backfill (mint_url, keyset_id, y, issuer_id, issuer_pubkey) "
+                            + "VALUES (?,?,?,?,?) ON CONFLICT(mint_url, keyset_id, y) DO UPDATE SET "
+                            + "issuer_id=excluded.issuer_id, issuer_pubkey=excluded.issuer_pubkey")) {
+                ps.setString(1, mintUrl);
+                ps.setString(2, keysetId);
+                ps.setString(3, y);
+                ps.setString(4, issuerId);
+                ps.setString(5, issuerPubkey);
+                ps.executeUpdate();
+            }
+            int rows;
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "UPDATE events_index SET issuer_id=?, issuer_pubkey=?, issuer_backfilled=1 "
+                            + "WHERE (issuer_id IS NULL OR issuer_backfilled=1) AND event_id IN "
+                            + "(SELECT event_id FROM proof_ref WHERE mint_url=? AND keyset_id=? AND y=?)")) {
+                ps.setString(1, issuerId);
+                ps.setString(2, issuerPubkey);
+                ps.setString(3, mintUrl);
+                ps.setString(4, keysetId);
+                ps.setString(5, y);
+                rows = ps.executeUpdate();
+            }
+            return new IssuerBackfillResult(outcome, Optional.ofNullable(previous), rows);
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to back-fill issuer for proof " + y, ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Whether an event's issuer fields originate from the back-fill sidecar. */
+    public boolean isIssuerBackfilled(String eventId) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT issuer_backfilled FROM events_index WHERE event_id=?")) {
+            ps.setString(1, eventId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getInt(1) == 1;
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to read issuer provenance for " + eventId, ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** The outcome of a single proof-to-issuer back-fill. */
+    public record IssuerBackfillResult(Outcome outcome, Optional<String> previousIssuerId, int rowsUpdated) {
+        public enum Outcome { APPLIED, OVERWRITTEN, UNCHANGED }
     }
 
     public Optional<String> eventIdForOperation(String operationId) {
