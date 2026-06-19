@@ -67,6 +67,28 @@ public final class TraceQueryService {
         return listEvents(b.build());
     }
 
+    /**
+     * Secret-free summaries of the events bound to a voucher, for surfacing through the
+     * voucher inspect API (which is not trace-access-gated). Never returns proof secrets.
+     */
+    public List<TraceEventSummary> voucherEventSummaries(String voucherRef, int limit) {
+        TraceEventQuery query = TraceEventQuery.builder().voucherRef(voucherRef).limit(limit).build();
+        return store.findFiltered(query).stream().map(this::toSummary).toList();
+    }
+
+    private TraceEventSummary toSummary(StoredEvent stored) {
+        TransactionEvent e = stored.event();
+        String eventId = e.eventId().orElse(null);
+        Optional<SqliteSidecarIndex.ActivityState> cached =
+                eventId == null ? Optional.empty() : index.activityOf(eventId);
+        String activity = cached.map(SqliteSidecarIndex.ActivityState::activity)
+                .orElse(e.kind().isTerminalKind() ? "terminal" : "active");
+        String reason = cached.flatMap(SqliteSidecarIndex.ActivityState::reason)
+                .orElse(e.kind().isTerminalKind() ? "terminal_kind" : null);
+        return new TraceEventSummary(eventId, e.operationId(), e.kind().wireValue(),
+                e.mintUrl(), e.transitionAt(), activity, reason);
+    }
+
     /** Cursor-paginated events attributed to a given issuer pubkey, newest first. */
     public EventPage findByIssuerPubkey(String issuerPubkey, Optional<EventActivity> activity,
                                         int limit, Optional<String> cursor) {

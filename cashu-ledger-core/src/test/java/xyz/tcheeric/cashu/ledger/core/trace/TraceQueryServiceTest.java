@@ -74,6 +74,38 @@ class TraceQueryServiceTest {
         store.store(StoredEvent.of(e));
     }
 
+    private void storeVoucherSend(String eventId, String voucherRef, long ms, List<ProofRef> in) {
+        TransactionEvent e = new TransactionEvent(
+                Optional.of(eventId), "op-" + eventId, OperationKind.SEND, "https://mint.imani.casa", "sat",
+                Instant.ofEpochMilli(ms), Instant.ofEpochSecond(ms / 1000), "producer-pk",
+                Optional.empty(), in, List.of(), List.of(), Optional.empty(), Optional.of(voucherRef),
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                Optional.of(0L), Optional.empty(), Optional.empty(), Optional.empty(),
+                PrivacyMode.FULL, Optional.empty(), Optional.empty(), 1,
+                new NostrEventMetadata(Optional.of(eventId), 9079, Optional.empty(),
+                        Optional.empty(), Instant.ofEpochSecond(ms / 1000)));
+        store.store(StoredEvent.of(e));
+    }
+
+    /** Tests that voucher event summaries return the bound events with no secret fields. */
+    @Test
+    void shouldReturnSecretFreeVoucherEventSummaries() {
+        // Arrange: a SEND bound to voucher v1, and an unrelated swap
+        storeVoucherSend("evt-send", "v1", 1000, List.of(proof(64, "a1")));
+        storeSwap("evt-other", "https://mint.imani.casa", 1500,
+                List.of(proof(64, "b2")), List.of(proof(64, "b3")));
+
+        // Act
+        List<TraceEventSummary> summaries = service.voucherEventSummaries("v1", 50);
+
+        // Then: only the bound event, summarised with kind and activity, no secrets exposed
+        assertThat(summaries).hasSize(1);
+        TraceEventSummary summary = summaries.get(0);
+        assertThat(summary.eventId()).isEqualTo("evt-send");
+        assertThat(summary.kind()).isEqualTo("send");
+        assertThat(summary.activity()).isEqualTo("active");
+    }
+
     /** Tests that listing walks all events across pages via the cursor without overlap. */
     @Test
     void shouldPaginateWithCursor() {
