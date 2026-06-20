@@ -16,7 +16,8 @@ import picocli.CommandLine;
                 TraceProofCommand.class,
                 TraceVoucherCommand.class,
                 TraceIssuerCommand.class,
-                ReplayCommand.class
+                ReplayCommand.class,
+                ExportCommand.class
         })
 public class TraceCommand implements Runnable {
 
