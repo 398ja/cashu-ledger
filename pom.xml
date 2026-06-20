@@ -44,6 +44,7 @@
         <mockito.version>5.19.0</mockito.version>
         <jqwik.version>1.9.2</jqwik.version>
         <testcontainers.version>1.21.3</testcontainers.version>
+        <selenium.version>4.27.0</selenium.version>
 
         <!-- The test-only modules are always part of the reactor (so IDEs import
              them), but their tests run only under the matching profile below. -->
