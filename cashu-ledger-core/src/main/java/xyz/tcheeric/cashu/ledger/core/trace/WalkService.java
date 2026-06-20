@@ -118,6 +118,9 @@ public final class WalkService {
                 neighbours.add(neighbour);
             }
         }
+        if (neighbours.size() <= 1) {
+            return List.copyOf(neighbours); // nothing to order; skip the per-neighbour time lookup
+        }
         return neighbours.stream()
                 .sorted(Comparator
                         .comparingLong(this::transitionAtOf)
