@@ -17,6 +17,8 @@ import java.util.Map;
 import xyz.tcheeric.cashu.ledger.core.trace.EventPage;
 import xyz.tcheeric.cashu.ledger.core.trace.ProofCandidate;
 import xyz.tcheeric.cashu.ledger.core.trace.ProofHistory;
+import org.springframework.beans.factory.ObjectProvider;
+import xyz.tcheeric.cashu.ledger.core.trace.TraceIngestService;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceQueryService;
 import xyz.tcheeric.cashu.ledger.core.trace.VisualisationGraph;
 import xyz.tcheeric.cashu.ledger.core.trace.VisualisationService;
@@ -57,12 +59,14 @@ public class TraceController {
     private final VisualisationService visualisationService;
     private final WebLedgerProperties ledgerProperties;
     private final TraceAccessAuditSink auditSink;
+    private final ObjectProvider<TraceIngestService> ingestServiceProvider;
 
     public TraceController(TraceQueryService queryService, TraceEventStore store,
                           TraceResponseMapper mapper, WalkService walkService,
                           VisualisationService visualisationService,
                           WebLedgerProperties ledgerProperties,
-                          TraceAccessAuditSink auditSink) {
+                          TraceAccessAuditSink auditSink,
+                          ObjectProvider<TraceIngestService> ingestServiceProvider) {
         this.queryService = queryService;
         this.store = store;
         this.mapper = mapper;
@@ -70,6 +74,7 @@ public class TraceController {
         this.visualisationService = visualisationService;
         this.ledgerProperties = ledgerProperties;
         this.auditSink = auditSink;
+        this.ingestServiceProvider = ingestServiceProvider;
     }
 
     @GetMapping("/events")
@@ -242,7 +247,7 @@ public class TraceController {
         StatsView view = new StatsView(
                 status.available(), status.rebuilding(), status.indexedEventCount(),
                 status.latestTransitionAt().map(Instant::toString).orElse(null),
-                TransactionEvent.CURRENT_SCHEMA_VERSION);
+                TransactionEvent.CURRENT_SCHEMA_VERSION, ingestCounters());
         audit(principal, "/stats", null, 1, false);
         return ResponseEntity.ok(view);
     }
@@ -257,6 +262,16 @@ public class TraceController {
                 List.of());
         audit(principal, "/relays", null, ledgerProperties.getRelays().size(), false);
         return ResponseEntity.ok(view);
+    }
+
+    private StatsView.IngestCounters ingestCounters() {
+        TraceIngestService ingest = ingestServiceProvider.getIfAvailable();
+        if (ingest == null) {
+            return null;
+        }
+        var metrics = ingest.metrics();
+        return new StatsView.IngestCounters(metrics.stored(), metrics.duplicates(),
+                metrics.rejected(), metrics.conflicts());
     }
 
     private WalkResult anchoredWalk(String eventId, String y, String mintUrl, String keysetId,

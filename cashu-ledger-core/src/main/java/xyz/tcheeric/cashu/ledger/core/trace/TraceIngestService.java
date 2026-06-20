@@ -21,6 +21,7 @@ public final class TraceIngestService {
     private final TraceIngestValidator validator;
     private final TraceEventStore store;
     private final boolean allowHistorical;
+    private final TraceIngestListener listener;
 
     private final AtomicLong stored = new AtomicLong();
     private final AtomicLong duplicates = new AtomicLong();
@@ -29,10 +30,17 @@ public final class TraceIngestService {
 
     public TraceIngestService(TraceEventMapper mapper, TraceIngestValidator validator,
                               TraceEventStore store, boolean allowHistorical) {
+        this(mapper, validator, store, allowHistorical, TraceIngestListener.NONE);
+    }
+
+    public TraceIngestService(TraceEventMapper mapper, TraceIngestValidator validator,
+                              TraceEventStore store, boolean allowHistorical,
+                              TraceIngestListener listener) {
         this.mapper = mapper;
         this.validator = validator;
         this.store = store;
         this.allowHistorical = allowHistorical;
+        this.listener = listener;
     }
 
     /** Ingests one raw signed event JSON received from {@code relayUrl}. */
@@ -67,7 +75,8 @@ public final class TraceIngestService {
             return IngestOutcome.rejected(rejection.get());
         }
 
-        boolean isNew = store.store(new StoredEvent(event, Optional.of(parsed.rawJson())));
+        StoredEvent toStore = new StoredEvent(event, Optional.of(parsed.rawJson()));
+        boolean isNew = store.store(toStore);
         if (!isNew) {
             duplicates.incrementAndGet();
             return IngestOutcome.duplicate(eventId);
@@ -75,6 +84,7 @@ public final class TraceIngestService {
         stored.incrementAndGet();
         LOGGER.info("trace_event_stored event_id={} op={} mint_url={}",
                 eventId, event.kind().wireValue(), event.mintUrl());
+        notifyListener(toStore);
         return IngestOutcome.stored(eventId);
     }
 
@@ -89,6 +99,15 @@ public final class TraceIngestService {
                     "operation " + event.operationId() + " already stored with different content")));
         }
         return Optional.empty();
+    }
+
+    private void notifyListener(StoredEvent event) {
+        try {
+            listener.onStored(event);
+        } catch (RuntimeException e) {
+            LOGGER.warn("trace_ingest_listener_failed event_id={} error={}",
+                    event.event().eventId().orElse("?"), e.getMessage());
+        }
     }
 
     public TraceIngestMetrics metrics() {

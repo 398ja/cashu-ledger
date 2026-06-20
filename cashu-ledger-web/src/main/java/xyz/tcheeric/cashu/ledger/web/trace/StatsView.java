@@ -19,5 +19,10 @@ public record StatsView(
         boolean rebuilding,
         long indexedEventCount,
         String latestTransitionAt,
-        int currentSchemaVersion) {
+        int currentSchemaVersion,
+        IngestCounters ingest) {
+
+    /** Ingest reconciliation counters, present only when the ingest path is enabled. */
+    public record IngestCounters(long accepted, long duplicates, long rejected, long conflicts) {
+    }
 }

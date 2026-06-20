@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import xyz.tcheeric.cashu.ledger.web.security.TraceIssuerProperties;
 import xyz.tcheeric.cashu.ledger.web.security.TraceSecurityProperties;
+import xyz.tcheeric.cashu.ledger.core.trace.ActivityCache;
 import xyz.tcheeric.cashu.ledger.core.trace.RedactionKeyRegistry;
 import xyz.tcheeric.cashu.ledger.core.trace.EdgeDeriver;
 import xyz.tcheeric.cashu.ledger.core.trace.IndexedTraceEventStore;
@@ -67,5 +68,10 @@ public class TraceWebConfig {
     @Bean
     public RedactionKeyRegistry redactionKeyRegistry(TraceSecurityProperties securityProperties) {
         return new RedactionKeyRegistry(HexFormat.of().parseHex(securityProperties.getRedactionMasterKeyHex()));
+    }
+
+    @Bean
+    public ActivityCache traceActivityCache(SqliteSidecarIndex index) {
+        return new ActivityCache(index);
     }
 }
