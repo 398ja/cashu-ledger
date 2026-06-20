@@ -35,7 +35,10 @@ class TraceIngestServiceTest {
     private static final long EVENT_MS = 1740000000123L;
     private static final String MINT = "https://mint.imani.casa";
 
+    private static final long NOW_MS = EVENT_MS + 5000;
+
     private SqliteSidecarIndex index;
+    private IndexedTraceEventStore store;
     private TraceIngestService service;
 
     private static String derivePub() {
@@ -49,11 +52,15 @@ class TraceIngestServiceTest {
     @BeforeEach
     void setUp() {
         index = new SqliteSidecarIndex("jdbc:sqlite::memory:");
-        IndexedTraceEventStore store = new IndexedTraceEventStore(new InMemoryRawEventStore(), index);
+        store = new IndexedTraceEventStore(new InMemoryRawEventStore(), index);
+        service = newService(false);
+    }
+
+    private TraceIngestService newService(boolean allowHistorical) {
         TraceIngestValidator validator = new TraceIngestValidator(
                 new ProducerAttestationConfig(Map.of(MINT, Set.of(PUB))), 1, 60, 24 * 60 * 60,
-                () -> EVENT_MS + 5000);
-        service = new TraceIngestService(new TraceEventMapper(), validator, store, false);
+                () -> NOW_MS);
+        return new TraceIngestService(new TraceEventMapper(), validator, store, allowHistorical);
     }
 
     @AfterEach
@@ -81,6 +88,52 @@ class TraceIngestServiceTest {
                 Optional.empty(), 1,
                 new NostrEventMetadata(Optional.empty(), 9079, Optional.empty(), Optional.empty(),
                         Instant.ofEpochSecond(EVENT_MS / 1000)));
+    }
+
+    private TransactionEvent staleSwap(String operationId, long ms, List<ProofRef> in, List<ProofRef> out) {
+        return new TransactionEvent(
+                Optional.empty(), operationId, OperationKind.SWAP, MINT, "sat",
+                Instant.ofEpochMilli(ms), Instant.ofEpochSecond(ms / 1000),
+                PUB, Optional.empty(), in, out, List.of(),
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(), Optional.of(0L), Optional.empty(),
+                Optional.empty(), Optional.empty(), PrivacyMode.FULL, Optional.empty(),
+                Optional.empty(), 1,
+                new NostrEventMetadata(Optional.empty(), 9079, Optional.empty(), Optional.empty(),
+                        Instant.ofEpochSecond(ms / 1000)));
+    }
+
+    /** Tests that an event older than the retention window is rejected as stale by default. */
+    @Test
+    void shouldRejectStaleEventWithoutAllowHistorical() throws Exception {
+        // Given: an event two days older than the 24h stale window
+        long twoDaysOld = NOW_MS - 2L * 24 * 60 * 60 * 1000;
+        String json = signedJson(staleSwap("op-stale", twoDaysOld,
+                List.of(proof(64, "aa")), List.of(proof(64, "bb"))));
+
+        // When: ingesting with allowHistorical=false (the default service)
+        IngestOutcome outcome = service.ingest(json, "wss://relay");
+
+        // Then: rejected as stale
+        assertThat(outcome.status()).isEqualTo(IngestOutcome.Status.REJECTED);
+        assertThat(outcome.rejection()).map(IngestRejection::code).contains("CLOCK_SKEW_STALE");
+    }
+
+    /** Tests that --allow-historical accepts an otherwise-stale backfilled event. */
+    @Test
+    void shouldAcceptStaleEventWithAllowHistorical() throws Exception {
+        // Given: the same two-day-old event and a historical-allowing service
+        long twoDaysOld = NOW_MS - 2L * 24 * 60 * 60 * 1000;
+        String json = signedJson(staleSwap("op-stale", twoDaysOld,
+                List.of(proof(64, "aa")), List.of(proof(64, "bb"))));
+        TraceIngestService historical = newService(true);
+
+        // When: ingesting with allowHistorical=true
+        IngestOutcome outcome = historical.ingest(json, "wss://relay");
+
+        // Then: stored
+        assertThat(outcome.status()).isEqualTo(IngestOutcome.Status.STORED);
+        assertThat(historical.metrics().stored()).isEqualTo(1);
     }
 
     private String signedJson(TransactionEvent event) throws Exception {
