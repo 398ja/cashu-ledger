@@ -20,6 +20,12 @@
             <artifactId>cashu-ledger-core</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Trace schema/ports used directly by the web read API (also transitive via core) -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-ledger-trace-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
