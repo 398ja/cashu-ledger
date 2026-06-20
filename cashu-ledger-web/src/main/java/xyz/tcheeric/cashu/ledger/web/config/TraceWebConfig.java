@@ -10,6 +10,7 @@ import xyz.tcheeric.cashu.ledger.web.security.TraceIssuerProperties;
 import xyz.tcheeric.cashu.ledger.web.security.TraceSecurityProperties;
 import xyz.tcheeric.cashu.ledger.core.trace.ActivityCache;
 import xyz.tcheeric.cashu.ledger.core.trace.RedactionKeyRegistry;
+import xyz.tcheeric.cashu.ledger.core.trace.TombstoneStore;
 import xyz.tcheeric.cashu.ledger.core.trace.EdgeDeriver;
 import xyz.tcheeric.cashu.ledger.core.trace.IndexedTraceEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.InMemoryRawEventStore;
@@ -28,7 +29,7 @@ import xyz.tcheeric.cashu.ledger.trace.core.TraceEventStore;
  * follow-up (this checkpoint covers the read API).
  */
 @Configuration
-@EnableConfigurationProperties(TraceIssuerProperties.class)
+@EnableConfigurationProperties({TraceIssuerProperties.class, TraceLimitsProperties.class})
 public class TraceWebConfig {
 
     @Bean(destroyMethod = "close")
@@ -43,8 +44,13 @@ public class TraceWebConfig {
     }
 
     @Bean
-    public TraceEventStore traceEventStore(RawEventStore rawEventStore, SqliteSidecarIndex index) {
+    public IndexedTraceEventStore traceEventStore(RawEventStore rawEventStore, SqliteSidecarIndex index) {
         return new IndexedTraceEventStore(rawEventStore, index);
+    }
+
+    @Bean
+    public TombstoneStore traceTombstoneStore(IndexedTraceEventStore store) {
+        return new TombstoneStore(store);
     }
 
     @Bean

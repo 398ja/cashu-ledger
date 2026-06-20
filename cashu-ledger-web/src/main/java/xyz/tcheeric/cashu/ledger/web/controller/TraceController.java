@@ -37,6 +37,7 @@ import xyz.tcheeric.cashu.ledger.trace.core.StoredEvent;
 import xyz.tcheeric.cashu.ledger.trace.core.TraceEventQuery;
 import xyz.tcheeric.cashu.ledger.trace.core.TraceEventStore;
 import xyz.tcheeric.cashu.ledger.trace.core.TransactionEvent;
+import xyz.tcheeric.cashu.ledger.web.config.TraceLimitsProperties;
 import xyz.tcheeric.cashu.ledger.web.config.WebLedgerProperties;
 import xyz.tcheeric.cashu.ledger.web.security.TracePrincipal;
 import xyz.tcheeric.cashu.ledger.web.trace.EventPageView;
@@ -68,6 +69,7 @@ public class TraceController {
     private final ObjectProvider<TraceIngestService> ingestServiceProvider;
     private final MeterRegistry meterRegistry;
     private final QuoteStatusService quoteStatusService;
+    private final TraceLimitsProperties limits;
 
     public TraceController(TraceQueryService queryService, TraceEventStore store,
                           TraceResponseMapper mapper, WalkService walkService,
@@ -76,7 +78,8 @@ public class TraceController {
                           TraceAccessAuditSink auditSink,
                           ObjectProvider<TraceIngestService> ingestServiceProvider,
                           MeterRegistry meterRegistry,
-                          QuoteStatusService quoteStatusService) {
+                          QuoteStatusService quoteStatusService,
+                          TraceLimitsProperties limits) {
         this.queryService = queryService;
         this.store = store;
         this.mapper = mapper;
@@ -87,6 +90,7 @@ public class TraceController {
         this.ingestServiceProvider = ingestServiceProvider;
         this.meterRegistry = meterRegistry;
         this.quoteStatusService = quoteStatusService;
+        this.limits = limits;
     }
 
     @GetMapping("/events")
@@ -172,6 +176,7 @@ public class TraceController {
 
         TracePrincipal principal = principal(request);
         WalkService.Direction dir = walkDirection(direction);
+        int boundedLimit = Math.min(limit, limits.getMaxWalkNodes());
 
         ProofCandidate target;
         if (mintUrl != null && keysetId != null) {
@@ -198,7 +203,7 @@ public class TraceController {
 
         final ProofCandidate resolved = target;
         WalkResult result = timed("cashu_trace_walk_seconds", () -> walkService.walkFromProof(
-                resolved.mintUrl(), resolved.keysetId(), y, dir, depth, limit));
+                resolved.mintUrl(), resolved.keysetId(), y, dir, depth, boundedLimit));
         audit(principal, "/proofs/" + y + "/walk", y, result.nodes().size(), false);
         return noStore().body(result);
     }
@@ -246,8 +251,9 @@ public class TraceController {
 
         TracePrincipal principal = principal(request);
         WalkService.Direction dir = walkDirection(direction);
+        int boundedLimit = Math.min(limit, limits.getMaxWalkNodes());
         VisualisationGraph graph = timed("cashu_trace_visualisation_seconds", () -> {
-            WalkResult walk = anchoredWalk(eventId, y, mintUrl, keysetId, dir, depth, limit);
+            WalkResult walk = anchoredWalk(eventId, y, mintUrl, keysetId, dir, depth, boundedLimit);
             return visualisationService.fromWalk(walk);
         });
         int nodeCount = graph.mints().stream().mapToInt(m -> m.nodes().size()).sum();
@@ -364,8 +370,9 @@ public class TraceController {
         return noStore().body(view);
     }
 
-    private static int pageLimit(Integer limit) {
-        return limit != null ? limit : TraceEventQuery.DEFAULT_LIMIT;
+    private int pageLimit(Integer limit) {
+        int requested = limit != null ? limit : TraceEventQuery.DEFAULT_LIMIT;
+        return Math.min(requested, limits.getMaxPageLimit());
     }
 
     private List<ProofCandidate> matchingCandidates(String y, String mintUrl) {
