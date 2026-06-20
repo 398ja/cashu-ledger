@@ -10,7 +10,7 @@ events through the ledger's ingest pipeline.
 | Service | Image | Role |
 |---------|-------|------|
 | `cashu-vault-db` | `postgres:16` | keyset/vault store |
-| `cashu-vault-jpa` | `cashu-vault-jpa:latest` | keyset service (port 3333), seeded by `vault-seed` |
+| `cashu-vault-jpa` | `cashu-vault-jpa:0.6.0` | keyset service (port 3333), seeded by `vault-seed` (pinned pre-V3, see below) |
 | `vault-seed` | `postgres:16` | applies `config/seed-vault.sql` |
 | `payment-adapter-db` | `postgres:16` | gateway/quote store (`payment_gateway`) |
 | `payment-adapter-rest` | `payment-adapter-rest:latest` | gateway: persists mint/melt quotes (port 8080) |
@@ -20,6 +20,13 @@ events through the ledger's ingest pipeline.
 
 Images come from `docker.398ja.xyz` (the internal registry). `MINT_WEBHOOK_SECRET` is set because
 recent mint builds require it outside the `local` profile.
+
+`cashu-vault-jpa` is pinned to `0.6.0` — the last tag before Flyway migration
+`V3__add_vault_path_to_key` moved private keys to HashiCorp Vault. On `:0.7.0`/`:latest` a fresh DB
+cannot store the inline keys the seed/preload provide, so the mint cannot sign. See
+[../../../../../docs/bugs/2026-06-20-cashu-vault-jpa-vault-path-blocks-minting.md](../../../../../docs/bugs/2026-06-20-cashu-vault-jpa-vault-path-blocks-minting.md).
+The `nostr-relay` command rewrites the strfry default config to disable the write-policy whitelist so
+the test producer key may publish.
 
 ## Verified
 

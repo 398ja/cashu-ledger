@@ -29,7 +29,11 @@ services:
       retries: 20
 
   cashu-vault-jpa:
-    image: docker.398ja.xyz/cashu-vault-jpa:latest
+    # Pinned to the last pre-V3 tag: V3__add_vault_path_to_key (in :0.7.0 and :latest) drops the
+    # inline private_key column in favour of a HashiCorp Vault reference, which the seed/preload
+    # cannot satisfy without an external Vault. See
+    # docs/bugs/2026-06-20-cashu-vault-jpa-vault-path-blocks-minting.md.
+    image: docker.398ja.xyz/cashu-vault-jpa:0.6.0
     environment:
       SERVER_PORT: "3333"
       SPRING_DATASOURCE_URL: jdbc:postgresql://cashu-vault-db:5432/cashu_vault
@@ -126,7 +130,9 @@ services:
 
   nostr-relay:
     image: dockurr/strfry:latest
-    command: ["sh", "-c", "sed -i 's/^[[:space:]]*nofiles[[:space:]]*=.*/    nofiles = 0/' /etc/strfry.conf.default && exec /app/strfry.sh"]
+    # Disable the default write-policy whitelist (so the test producer key may publish) and raise the
+    # fd limit, mirroring the integration-test relay setup.
+    command: ["sh", "-c", "sed -i -e 's|plugin = .*|plugin = \"\"|' -e 's|^[[:space:]]*nofiles[[:space:]]*=.*|    nofiles = 0|' /etc/strfry.conf.default && exec /app/strfry.sh"]
     tmpfs:
       - /app/strfry-db
     ports:
