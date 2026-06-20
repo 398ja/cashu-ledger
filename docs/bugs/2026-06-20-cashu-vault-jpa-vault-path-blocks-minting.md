@@ -172,11 +172,11 @@ function. A clean staging redeploy (or CI) would hit the same failure.
    write keys into Vault rather than inline `private_key`.
 3. **Make `PreloadMintLoadService` fail fast** instead of `WARN`-and-continue, so a mint with no signing
    keys does not report healthy and silently 500 later.
-4. **Short-term workaround for the E2E only** (no product code change): pin the stack to a pre-V3 vault
-   image. Only `cashu-vault-jpa:0.6.0` predates V3 (its migrations are V1, V2, V999 — no V3); `:0.7.0`
-   and `:latest` already include `V3__add_vault_path_to_key`. `0.6.0` retains the inline `private_key`
-   column, matching the existing seed/preload. **Applied** in the E2E stack
-   (`cashu-ledger-e2e-tests/src/test/resources/trace-mint/docker-compose.yml`).
+4. **Run the post-V3 model in the E2E** (chosen — no product code change): keep `:latest` and supply a
+   HashiCorp Vault, seeding key secrets into it plus matching `vault_path` DB rows. **Applied** in the
+   E2E stack (`cashu-ledger-e2e-tests/src/test/resources/trace-mint/`) — see the "Resolution adopted"
+   section below. (For reference, only `cashu-vault-jpa:0.6.0` predates V3; `:0.7.0`/`:latest` include
+   `V3__add_vault_path_to_key`.)
 
 ## Impact on T039
 
@@ -186,6 +186,17 @@ The T039 real-mint trace-capture E2E is otherwise complete:
 - `cashu-ledger-e2e-tests/.../trace/TraceCaptureE2ETest.java` — boots the stack, performs real ops,
   signs/publishes kind-9079 events, ingests via `TraceSyncEngine`, asserts capture within 30s.
 
-With the vault pinned to `cashu-vault-jpa:0.6.0` (workaround 4 above), the E2E **passes**: real
-mint+swap proofs are captured by the ledger within ~1.2 s. The bug remains open for a proper fix on
-`:latest` (workarounds 1–3) so that fresh/CI deployments and the staging redeploy path are not broken.
+### Resolution adopted for the E2E
+
+The E2E now runs the **post-V3 model on current `:latest` images** — keys exclusively in HashiCorp
+Vault — rather than pinning `0.6.0`. The trace-mint stack adds a `hashicorp-vault` + `vault-init`
+that seed each key secret to `cashu/keys/{mintId}/{keySetId}/{amount}`, and `seed-vault.sql` inserts
+`t_key` rows carrying the matching `vault_path`; the mint is configured for the HashiCorp backend and
+reads secrets from Vault at signing time. The E2E **passes** (real mint+swap captured within ~1 s).
+
+This validates that `cashu-vault-jpa:latest` is correct when a HashiCorp Vault is present. The bug
+remains open as a **deployment/seeding gap**: the shipped seed (`seed-vault.sql` with `private_key`)
+and the mint's `PreloadMintLoadService` (raw `keyClient().store()` posting a private key with a null
+`vault_path`) still assume the dropped column, so a fresh deploy without the HashiCorp seeding above
+cannot mint. Fixing that for production means routing the seed/preload through HashiCorp (e.g. the
+mint preload using `keyVault().store()` so `HCKeyVault` writes the secret and sets `vault_path`).
