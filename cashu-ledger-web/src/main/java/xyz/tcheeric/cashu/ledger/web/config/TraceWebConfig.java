@@ -116,7 +116,7 @@ public class TraceWebConfig {
     }
 
     @Bean
-    public IndexReconciler traceIndexReconciler(TraceEventStore store) {
-        return new IndexReconciler(store, 30, Clock.systemUTC());
+    public IndexReconciler traceIndexReconciler(IndexedTraceEventStore store) {
+        return new IndexReconciler(store);
     }
 }

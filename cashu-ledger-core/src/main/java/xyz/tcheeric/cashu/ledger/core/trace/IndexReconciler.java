@@ -1,40 +1,35 @@
 package xyz.tcheeric.cashu.ledger.core.trace;
 
-import java.time.Clock;
-import java.time.Instant;
 import xyz.tcheeric.cashu.ledger.trace.core.IndexStatus;
-import xyz.tcheeric.cashu.ledger.trace.core.TraceEventStore;
 
 /**
- * Assesses the sidecar index's serving health (design §5.4 — index availability/lag, FR). The
- * read path consults this to fail fast with {@code 503 INDEX_UNAVAILABLE} / {@code INDEX_LAGGED}
- * rather than serve from a missing or far-behind index, and the lag feeds
- * {@code cashu_trace_index_lag_seconds}.
+ * Assesses the sidecar index's serving health (design §5.4, FR — index availability/lag). The
+ * read path consults this to fail fast with {@code 503 INDEX_UNAVAILABLE} (sidecar missing or
+ * rebuilding) or {@code 503 INDEX_LAGGED} (the sidecar is behind the nostrdb system of record)
+ * rather than serve sidecar-derived results from an incomplete index. The backlog also feeds
+ * {@code cashu_trace_index_pending_events}.
  *
- * <p>Startup rebuild against the nostrdb system-of-record and {@code pending_index} retry land
- * with the nostrdb-backed {@code RawEventStore} adapter; this covers the availability/lag signal
- * over the current store.</p>
+ * <p>The ledger projects the sidecar synchronously, so the backlog is positive only transiently —
+ * at startup before the rebuild completes, or after a rare sidecar write failure that the
+ * reconciler retries.</p>
  */
 public final class IndexReconciler {
 
     /** Index serving status. */
     public enum Status { HEALTHY, LAGGED, REBUILDING, UNAVAILABLE }
 
-    /** A health snapshot: the status and how far behind the newest event the index is. */
-    public record Health(Status status, long lagSeconds) {
+    /** A health snapshot: the status and the number of events not yet in the sidecar. */
+    public record Health(Status status, long pendingEvents) {
+        /** Whether sidecar-derived queries should be served (only HEALTHY). */
         public boolean isServable() {
-            return status == Status.HEALTHY || status == Status.LAGGED;
+            return status == Status.HEALTHY;
         }
     }
 
-    private final TraceEventStore store;
-    private final long lagThresholdSeconds;
-    private final Clock clock;
+    private final IndexedTraceEventStore store;
 
-    public IndexReconciler(TraceEventStore store, long lagThresholdSeconds, Clock clock) {
+    public IndexReconciler(IndexedTraceEventStore store) {
         this.store = store;
-        this.lagThresholdSeconds = lagThresholdSeconds;
-        this.clock = clock;
     }
 
     /** Computes the current index health. */
@@ -46,14 +41,12 @@ public final class IndexReconciler {
         if (status.rebuilding()) {
             return new Health(Status.REBUILDING, 0);
         }
-        long lag = status.latestTransitionAt()
-                .map(t -> Math.max(0, Instant.now(clock).getEpochSecond() - t.getEpochSecond()))
-                .orElse(0L);
-        return new Health(lag > lagThresholdSeconds ? Status.LAGGED : Status.HEALTHY, lag);
+        long pending = store.pendingIndexCount();
+        return new Health(pending > 0 ? Status.LAGGED : Status.HEALTHY, pending);
     }
 
-    /** Seconds the index is behind the newest indexed event (0 when empty/unavailable). */
-    public long lagSeconds() {
-        return check().lagSeconds();
+    /** Events in the system of record not yet projected into the sidecar (0 when caught up). */
+    public long pendingEvents() {
+        return store.pendingIndexCount();
     }
 }

@@ -26,6 +26,15 @@ public final class IndexedTraceEventStore implements TraceEventStore {
         this.index = index;
     }
 
+    /**
+     * Events present in the raw system-of-record but not yet projected into the sidecar — the
+     * index's backlog (design §5.4, {@code pending_index}). Positive only transiently: at startup
+     * before rebuild, or after a sidecar write failure; zero once the sidecar has caught up.
+     */
+    public long pendingIndexCount() {
+        return Math.max(0, rawStore.count() - index.count());
+    }
+
     @Override
     public boolean store(StoredEvent event) {
         boolean newlyStored = rawStore.store(event);

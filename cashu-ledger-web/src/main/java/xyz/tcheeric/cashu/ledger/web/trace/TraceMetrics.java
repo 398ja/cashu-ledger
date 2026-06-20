@@ -41,8 +41,8 @@ public final class TraceMetrics implements MeterBinder {
         Gauge.builder("cashu_trace_tombstones", index, i -> i.tombstoneCount())
                 .description("Pruned trace events retained as tombstones")
                 .register(registry);
-        Gauge.builder("cashu_trace_index_lag_seconds", indexReconciler, r -> r.lagSeconds())
-                .description("Seconds the sidecar index is behind the newest indexed event")
+        Gauge.builder("cashu_trace_index_pending_events", indexReconciler, r -> r.pendingEvents())
+                .description("Events in the system of record not yet projected into the sidecar")
                 .register(registry);
         registerIngestGauge(registry, "cashu_trace_ingest_accepted", TraceIngestMetrics::stored);
         registerIngestGauge(registry, "cashu_trace_ingest_duplicates", TraceIngestMetrics::duplicates);

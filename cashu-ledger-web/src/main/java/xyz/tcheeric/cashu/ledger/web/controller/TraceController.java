@@ -21,6 +21,9 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import xyz.tcheeric.cashu.ledger.core.trace.IndexReconciler;
 import xyz.tcheeric.cashu.ledger.core.trace.QuoteStatusService;
 import xyz.tcheeric.cashu.ledger.core.trace.QuoteStatusView;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceIngestService;
@@ -70,6 +73,7 @@ public class TraceController {
     private final MeterRegistry meterRegistry;
     private final QuoteStatusService quoteStatusService;
     private final TraceLimitsProperties limits;
+    private final IndexReconciler indexReconciler;
 
     public TraceController(TraceQueryService queryService, TraceEventStore store,
                           TraceResponseMapper mapper, WalkService walkService,
@@ -79,7 +83,8 @@ public class TraceController {
                           ObjectProvider<TraceIngestService> ingestServiceProvider,
                           MeterRegistry meterRegistry,
                           QuoteStatusService quoteStatusService,
-                          TraceLimitsProperties limits) {
+                          TraceLimitsProperties limits,
+                          IndexReconciler indexReconciler) {
         this.queryService = queryService;
         this.store = store;
         this.mapper = mapper;
@@ -91,6 +96,7 @@ public class TraceController {
         this.meterRegistry = meterRegistry;
         this.quoteStatusService = quoteStatusService;
         this.limits = limits;
+        this.indexReconciler = indexReconciler;
     }
 
     @GetMapping("/events")
@@ -112,6 +118,7 @@ public class TraceController {
             @RequestParam(name = "cursor", required = false) String cursor) {
 
         TracePrincipal principal = principal(request);
+        requireServableIndex();
         TraceEventQuery.Builder q = TraceEventQuery.builder();
         if (mintUrl != null) q.mintUrl(mintUrl);
         if (producerPubkey != null) q.producerPubkey(producerPubkey);
@@ -147,6 +154,7 @@ public class TraceController {
     public ResponseEntity<EventView> getByOperation(HttpServletRequest request,
                                                     @PathVariable("operationId") String operationId) {
         TracePrincipal principal = principal(request);
+        requireServableIndex();
         Optional<StoredEvent> event = queryService.getByOperation(operationId);
         return single(principal, event, "/operations/" + operationId);
     }
@@ -158,6 +166,7 @@ public class TraceController {
             @RequestParam(name = "mintUrl", required = false) String mintUrl,
             @RequestParam(name = "keysetId", required = false) String keysetId) {
         TracePrincipal principal = principal(request);
+        requireServableIndex();
         ProofHistory history = queryService.proofHistory(
                 Optional.ofNullable(mintUrl), Optional.ofNullable(keysetId), y);
         audit(principal, "/proofs/" + y, y, history.groups().size(), false);
@@ -175,6 +184,7 @@ public class TraceController {
             @RequestParam(name = "limit", required = false, defaultValue = "1000") int limit) {
 
         TracePrincipal principal = principal(request);
+        requireServableIndex();
         WalkService.Direction dir = walkDirection(direction);
         int boundedLimit = Math.min(limit, limits.getMaxWalkNodes());
 
@@ -216,6 +226,7 @@ public class TraceController {
             @RequestParam(name = "limit", required = false) Integer limit,
             @RequestParam(name = "cursor", required = false) String cursor) {
         TracePrincipal principal = principal(request);
+        requireServableIndex();
         EventPage page = queryService.findByVoucherRef(voucherId, activityFilter(activity),
                 pageLimit(limit), Optional.ofNullable(cursor));
         return pageResponse(principal, page, "/vouchers/" + voucherId + "/events", voucherId);
@@ -230,6 +241,7 @@ public class TraceController {
             @RequestParam(name = "limit", required = false) Integer limit,
             @RequestParam(name = "cursor", required = false) String cursor) {
         TracePrincipal principal = principal(request);
+        requireServableIndex();
         Optional<EventActivity> activityFilter = activityFilter(activity);
         Optional<String> cursorValue = Optional.ofNullable(cursor);
         EventPage page = byPubkey
@@ -250,6 +262,7 @@ public class TraceController {
             @RequestParam(name = "limit", required = false, defaultValue = "1000") int limit) {
 
         TracePrincipal principal = principal(request);
+        requireServableIndex();
         WalkService.Direction dir = walkDirection(direction);
         int boundedLimit = Math.min(limit, limits.getMaxWalkNodes());
         VisualisationGraph graph = timed("cashu_trace_visualisation_seconds", () -> {
@@ -267,6 +280,7 @@ public class TraceController {
             @PathVariable("quoteId") String quoteId,
             @RequestParam(name = "mintUrl") String mintUrl) {
         TracePrincipal principal = principal(request);
+        requireServableIndex();
         Optional<QuoteStatusView> status = quoteStatusService.status(mintUrl, quoteId);
         audit(principal, "/quotes/" + quoteId + "/status", quoteId, status.isPresent() ? 1 : 0, false);
         return status.map(view -> noStore().body(view))
@@ -282,6 +296,7 @@ public class TraceController {
             @RequestParam(name = "limit", required = false) Integer limit,
             @RequestParam(name = "cursor", required = false) String cursor) {
         TracePrincipal principal = principal(request);
+        requireServableIndex();
         EventPage page = queryService.quoteEvents(mintUrl, quoteId, activityFilter(activity),
                 pageLimit(limit), Optional.ofNullable(cursor));
         return pageResponse(principal, page, "/quotes/" + quoteId + "/events", quoteId);
@@ -314,6 +329,23 @@ public class TraceController {
 
     private <T> T timed(String metric, Supplier<T> work) {
         return Timer.builder(metric).register(meterRegistry).record(work);
+    }
+
+    /** Guards sidecar-derived reads: 503 when the index is unavailable/rebuilding or lagging. */
+    private void requireServableIndex() {
+        IndexReconciler.Health health = indexReconciler.check();
+        switch (health.status()) {
+            case UNAVAILABLE, REBUILDING -> throw new IndexNotServableException("INDEX_UNAVAILABLE", 10);
+            case LAGGED -> throw new IndexNotServableException("INDEX_LAGGED", 5);
+            case HEALTHY -> { }
+        }
+    }
+
+    @ExceptionHandler(IndexNotServableException.class)
+    ResponseEntity<Map<String, String>> handleIndexNotServable(IndexNotServableException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.retryAfterSeconds()))
+                .body(Map.of("error", e.code()));
     }
 
     private StatsView.IngestCounters ingestCounters() {
