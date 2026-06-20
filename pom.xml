@@ -46,6 +46,7 @@
         <testcontainers.version>1.21.3</testcontainers.version>
         <selenium.version>4.27.0</selenium.version>
         <cashu-lib-crypto.version>0.9.1</cashu-lib-crypto.version>
+        <cashu-wallet-client.version>0.6.4</cashu-wallet-client.version>
         <opentelemetry.version>1.45.0</opentelemetry.version>
         <springdoc.version>2.8.6</springdoc.version>
 

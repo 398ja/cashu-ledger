@@ -66,6 +66,36 @@
             <version>${selenium.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- Real-mint trace-capture E2E (T039): drive a real cashu-mint via Testcontainers,
+             mint/swap/melt real proofs, sign+publish kind-9079 events, ingest, and assert. -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-ledger-trace-publisher</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-wallet-client</artifactId>
+            <version>${cashu-wallet-client.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-lib-crypto</artifactId>
+            <version>${cashu-lib-crypto.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
