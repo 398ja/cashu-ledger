@@ -59,6 +59,22 @@ public final class InMemoryOutboxStore implements OutboxStore {
     }
 
     @Override
+    public List<OutboxRecord> stuck(int minAttempts, int limit) {
+        lock.lock();
+        try {
+            return rows.values().stream()
+                    .filter(r -> r.status() == OutboxStatus.PENDING)
+                    .filter(r -> r.attempts() >= minAttempts)
+                    .sorted(Comparator.comparingInt(OutboxRecord::attempts).reversed()
+                            .thenComparing(OutboxRecord::operationId))
+                    .limit(limit)
+                    .toList();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
     public void markDelivered(String operationId) {
         lock.lock();
         try {

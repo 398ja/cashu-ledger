@@ -34,6 +34,12 @@ public interface OutboxStore {
     Optional<OutboxRecord> find(String operationId);
 
     /**
+     * Returns up to {@code limit} pending rows that have failed at least {@code minAttempts}
+     * times — the "stuck" delivery view for reconciliation, most-attempted first.
+     */
+    List<OutboxRecord> stuck(int minAttempts, int limit);
+
+    /**
      * Deletes the oldest pending row (for {@link xyz.tcheeric.cashu.ledger.trace.publisher.OverflowPolicy#DROP_OLDEST_AND_ALERT}).
      * Returns the dropped {@code operationId}, or empty if none was pending.
      */

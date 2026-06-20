@@ -154,6 +154,29 @@ public final class SqliteOutboxStore implements OutboxStore {
     }
 
     @Override
+    public List<OutboxRecord> stuck(int minAttempts, int limit) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT operation_id, event_id, event_json, created_at_ms, attempts, next_attempt_ms, status "
+                        + "FROM outbox WHERE status = 'PENDING' AND attempts >= ? "
+                        + "ORDER BY attempts DESC, operation_id ASC LIMIT ?")) {
+            ps.setInt(1, minAttempts);
+            ps.setInt(2, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<OutboxRecord> rows = new ArrayList<>();
+                while (rs.next()) {
+                    rows.add(mapRow(rs));
+                }
+                return rows;
+            }
+        } catch (SQLException e) {
+            throw new OutboxStorageException("Failed to query stuck outbox rows", e);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
     public Optional<String> deleteOldestPending() {
         lock.lock();
         try {
