@@ -21,3 +21,12 @@ spring:
     user:
       name: disabled
       password: disabled
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    prometheus:
+      access: read_only

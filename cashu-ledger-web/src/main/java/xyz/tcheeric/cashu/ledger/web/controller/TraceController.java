@@ -17,6 +17,9 @@ import java.util.Map;
 import xyz.tcheeric.cashu.ledger.core.trace.EventPage;
 import xyz.tcheeric.cashu.ledger.core.trace.ProofCandidate;
 import xyz.tcheeric.cashu.ledger.core.trace.ProofHistory;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import java.util.function.Supplier;
 import org.springframework.beans.factory.ObjectProvider;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceIngestService;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceQueryService;
@@ -61,13 +64,15 @@ public class TraceController {
     private final WebLedgerProperties ledgerProperties;
     private final TraceAccessAuditSink auditSink;
     private final ObjectProvider<TraceIngestService> ingestServiceProvider;
+    private final MeterRegistry meterRegistry;
 
     public TraceController(TraceQueryService queryService, TraceEventStore store,
                           TraceResponseMapper mapper, WalkService walkService,
                           VisualisationService visualisationService,
                           WebLedgerProperties ledgerProperties,
                           TraceAccessAuditSink auditSink,
-                          ObjectProvider<TraceIngestService> ingestServiceProvider) {
+                          ObjectProvider<TraceIngestService> ingestServiceProvider,
+                          MeterRegistry meterRegistry) {
         this.queryService = queryService;
         this.store = store;
         this.mapper = mapper;
@@ -76,6 +81,7 @@ public class TraceController {
         this.ledgerProperties = ledgerProperties;
         this.auditSink = auditSink;
         this.ingestServiceProvider = ingestServiceProvider;
+        this.meterRegistry = meterRegistry;
     }
 
     @GetMapping("/events")
@@ -185,8 +191,9 @@ public class TraceController {
             target = candidates.get(0);
         }
 
-        WalkResult result = walkService.walkFromProof(
-                target.mintUrl(), target.keysetId(), y, dir, depth, limit);
+        final ProofCandidate resolved = target;
+        WalkResult result = timed("cashu_trace_walk_seconds", () -> walkService.walkFromProof(
+                resolved.mintUrl(), resolved.keysetId(), y, dir, depth, limit));
         audit(principal, "/proofs/" + y + "/walk", y, result.nodes().size(), false);
         return noStore().body(result);
     }
@@ -234,8 +241,10 @@ public class TraceController {
 
         TracePrincipal principal = principal(request);
         WalkService.Direction dir = walkDirection(direction);
-        WalkResult walk = anchoredWalk(eventId, y, mintUrl, keysetId, dir, depth, limit);
-        VisualisationGraph graph = visualisationService.fromWalk(walk);
+        VisualisationGraph graph = timed("cashu_trace_visualisation_seconds", () -> {
+            WalkResult walk = anchoredWalk(eventId, y, mintUrl, keysetId, dir, depth, limit);
+            return visualisationService.fromWalk(walk);
+        });
         int nodeCount = graph.mints().stream().mapToInt(m -> m.nodes().size()).sum();
         audit(principal, "/visualisation", eventId != null ? eventId : y, nodeCount, false);
         return noStore().body(graph);
@@ -264,6 +273,10 @@ public class TraceController {
                 SchemaCompatibility.deprecatedVersions(current));
         audit(principal, "/relays", null, ledgerProperties.getRelays().size(), false);
         return ResponseEntity.ok(view);
+    }
+
+    private <T> T timed(String metric, Supplier<T> work) {
+        return Timer.builder(metric).register(meterRegistry).record(work);
     }
 
     private StatsView.IngestCounters ingestCounters() {

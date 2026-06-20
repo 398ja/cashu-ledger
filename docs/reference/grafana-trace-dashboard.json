@@ -1,0 +1,69 @@
+{
+  "title": "Cashu Ledger — Transaction Traceability",
+  "uid": "cashu-trace",
+  "schemaVersion": 39,
+  "editable": true,
+  "tags": ["cashu", "trace"],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Indexed events",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "cashu_trace_indexed_events", "legendFormat": "indexed" }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Tombstones (pruned)",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "targets": [{ "expr": "cashu_trace_tombstones", "legendFormat": "tombstones" }]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Ingest outcomes (rate/s)",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "rate(cashu_trace_ingest_accepted[5m])", "legendFormat": "accepted" },
+        { "expr": "rate(cashu_trace_ingest_duplicates[5m])", "legendFormat": "duplicates" },
+        { "expr": "rate(cashu_trace_ingest_rejected[5m])", "legendFormat": "rejected" },
+        { "expr": "rate(cashu_trace_ingest_conflicts[5m])", "legendFormat": "conflicts" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Walk latency (p95, p50)",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(cashu_trace_walk_seconds_bucket[5m])) by (le))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.50, sum(rate(cashu_trace_walk_seconds_bucket[5m])) by (le))", "legendFormat": "p50" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Visualisation latency (p95)",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(cashu_trace_visualisation_seconds_bucket[5m])) by (le))", "legendFormat": "p95" }
+      ]
+    }
+  ]
+}
