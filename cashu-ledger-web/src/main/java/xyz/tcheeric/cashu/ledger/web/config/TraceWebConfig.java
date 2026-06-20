@@ -12,6 +12,7 @@ import xyz.tcheeric.cashu.ledger.core.trace.ActivityCache;
 import xyz.tcheeric.cashu.ledger.core.trace.RedactionKeyRegistry;
 import xyz.tcheeric.cashu.ledger.core.trace.TombstoneStore;
 import xyz.tcheeric.cashu.ledger.core.trace.EdgeDeriver;
+import xyz.tcheeric.cashu.ledger.core.trace.IndexReconciler;
 import xyz.tcheeric.cashu.ledger.core.trace.IndexedTraceEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.InMemoryRawEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.RawEventStore;
@@ -87,5 +88,10 @@ public class TraceWebConfig {
     @Bean
     public QuoteStatusService traceQuoteStatusService(TraceEventStore store, SqliteSidecarIndex index) {
         return new QuoteStatusService(store, index, Clock.systemUTC());
+    }
+
+    @Bean
+    public IndexReconciler traceIndexReconciler(TraceEventStore store) {
+        return new IndexReconciler(store, 30, Clock.systemUTC());
     }
 }

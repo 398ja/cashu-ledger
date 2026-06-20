@@ -6,6 +6,7 @@ import io.micrometer.core.instrument.binder.MeterBinder;
 import java.util.function.ToDoubleFunction;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
+import xyz.tcheeric.cashu.ledger.core.trace.IndexReconciler;
 import xyz.tcheeric.cashu.ledger.core.trace.SqliteSidecarIndex;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceIngestMetrics;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceIngestService;
@@ -22,11 +23,14 @@ public final class TraceMetrics implements MeterBinder {
 
     private final SqliteSidecarIndex index;
     private final ObjectProvider<TraceIngestService> ingestServiceProvider;
+    private final IndexReconciler indexReconciler;
 
     public TraceMetrics(SqliteSidecarIndex index,
-                        ObjectProvider<TraceIngestService> ingestServiceProvider) {
+                        ObjectProvider<TraceIngestService> ingestServiceProvider,
+                        IndexReconciler indexReconciler) {
         this.index = index;
         this.ingestServiceProvider = ingestServiceProvider;
+        this.indexReconciler = indexReconciler;
     }
 
     @Override
@@ -36,6 +40,9 @@ public final class TraceMetrics implements MeterBinder {
                 .register(registry);
         Gauge.builder("cashu_trace_tombstones", index, i -> i.tombstoneCount())
                 .description("Pruned trace events retained as tombstones")
+                .register(registry);
+        Gauge.builder("cashu_trace_index_lag_seconds", indexReconciler, r -> r.lagSeconds())
+                .description("Seconds the sidecar index is behind the newest indexed event")
                 .register(registry);
         registerIngestGauge(registry, "cashu_trace_ingest_accepted", TraceIngestMetrics::stored);
         registerIngestGauge(registry, "cashu_trace_ingest_duplicates", TraceIngestMetrics::duplicates);
