@@ -22,6 +22,7 @@ public final class TraceIngestService {
     private final TraceEventStore store;
     private final boolean allowHistorical;
     private final TraceIngestListener listener;
+    private final TraceIngestMetricsRecorder metricsRecorder;
 
     private final AtomicLong stored = new AtomicLong();
     private final AtomicLong duplicates = new AtomicLong();
@@ -30,17 +31,25 @@ public final class TraceIngestService {
 
     public TraceIngestService(TraceEventMapper mapper, TraceIngestValidator validator,
                               TraceEventStore store, boolean allowHistorical) {
-        this(mapper, validator, store, allowHistorical, TraceIngestListener.NONE);
+        this(mapper, validator, store, allowHistorical, TraceIngestListener.NONE,
+                TraceIngestMetricsRecorder.NOOP);
     }
 
     public TraceIngestService(TraceEventMapper mapper, TraceIngestValidator validator,
                               TraceEventStore store, boolean allowHistorical,
                               TraceIngestListener listener) {
+        this(mapper, validator, store, allowHistorical, listener, TraceIngestMetricsRecorder.NOOP);
+    }
+
+    public TraceIngestService(TraceEventMapper mapper, TraceIngestValidator validator,
+                              TraceEventStore store, boolean allowHistorical,
+                              TraceIngestListener listener, TraceIngestMetricsRecorder metricsRecorder) {
         this.mapper = mapper;
         this.validator = validator;
         this.store = store;
         this.allowHistorical = allowHistorical;
         this.listener = listener;
+        this.metricsRecorder = metricsRecorder;
     }
 
     /** Ingests one raw signed event JSON received from {@code relayUrl}. */
@@ -50,6 +59,7 @@ public final class TraceIngestService {
             parsed = mapper.parse(rawJson, relayUrl);
         } catch (TraceParseException e) {
             rejected.incrementAndGet();
+            metricsRecorder.recordRejected("MALFORMED");
             LOGGER.warn("trace_event_rejected reason=malformed relay={} error={}", relayUrl, e.getMessage());
             return IngestOutcome.rejected(new IngestRejection("MALFORMED", e.getMessage()));
         }
@@ -64,12 +74,14 @@ public final class TraceIngestService {
 
         if (store.findByEventId(eventId).isPresent()) {
             duplicates.incrementAndGet();
+            metricsRecorder.recordDuplicate();
             return IngestOutcome.duplicate(eventId);
         }
 
         Optional<IngestRejection> rejection = validator.validate(parsed, allowHistorical);
         if (rejection.isPresent()) {
             rejected.incrementAndGet();
+            metricsRecorder.recordRejected(rejection.get().code());
             LOGGER.warn("trace_event_rejected event_id={} op={} code={} reason={}",
                     eventId, event.kind().wireValue(), rejection.get().code(), rejection.get().message());
             return IngestOutcome.rejected(rejection.get());
@@ -79,11 +91,14 @@ public final class TraceIngestService {
         boolean isNew = store.store(toStore);
         if (!isNew) {
             duplicates.incrementAndGet();
+            metricsRecorder.recordDuplicate();
             return IngestOutcome.duplicate(eventId);
         }
         stored.incrementAndGet();
-        LOGGER.info("trace_event_stored event_id={} op={} mint_url={}",
-                eventId, event.kind().wireValue(), event.mintUrl());
+        long lagMillis = Math.max(0, System.currentTimeMillis() - event.createdAt().toEpochMilli());
+        metricsRecorder.recordStored(event.kind(), lagMillis);
+        LOGGER.info("trace_event_stored event_id={} op={} mint_url={} ingest_lag_ms={}",
+                eventId, event.kind().wireValue(), event.mintUrl(), lagMillis);
         notifyListener(toStore);
         return IngestOutcome.stored(eventId);
     }
@@ -92,6 +107,7 @@ public final class TraceIngestService {
         Optional<StoredEvent> existing = store.findByOperationId(event.operationId());
         if (existing.isPresent() && !existing.get().event().eventId().orElse("").equals(eventId)) {
             conflicts.incrementAndGet();
+            metricsRecorder.recordConflict();
             LOGGER.warn("trace_event_conflict operation_id={} existing_event_id={} new_event_id={}",
                     event.operationId(), existing.get().event().eventId().orElse("?"), eventId);
             return Optional.of(IngestOutcome.conflict(eventId, new IngestRejection(

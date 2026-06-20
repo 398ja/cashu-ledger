@@ -18,8 +18,11 @@ import xyz.tcheeric.cashu.ledger.core.trace.ProducerAttestationConfig;
 import xyz.tcheeric.cashu.ledger.core.trace.SqliteSidecarIndex;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceEventMapper;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceEventSummary;
+import io.micrometer.core.instrument.MeterRegistry;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceIngestListener;
+import xyz.tcheeric.cashu.ledger.core.trace.TraceIngestMetricsRecorder;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceIngestService;
+import xyz.tcheeric.cashu.ledger.web.trace.MicrometerTraceIngestMetrics;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceIngestValidator;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceSyncEngine;
 import xyz.tcheeric.cashu.ledger.core.trace.VoucherStateWatcher;
@@ -59,14 +62,20 @@ public class TraceIngestConfig {
     }
 
     @Bean
+    public TraceIngestMetricsRecorder traceIngestMetricsRecorder(MeterRegistry registry) {
+        return new MicrometerTraceIngestMetrics(registry);
+    }
+
+    @Bean
     public TraceIngestService traceIngestService(TraceEventStore store,
                                                  TraceIngestProperties properties,
-                                                 TraceIngestListener listener) {
+                                                 TraceIngestListener listener,
+                                                 TraceIngestMetricsRecorder metricsRecorder) {
         TraceIngestValidator validator = new TraceIngestValidator(
                 producerAttestation(properties), TransactionEvent.CURRENT_SCHEMA_VERSION,
                 60, 24 * 60 * 60, System::currentTimeMillis);
         return new TraceIngestService(new TraceEventMapper(), validator, store,
-                properties.isAllowHistorical(), listener);
+                properties.isAllowHistorical(), listener, metricsRecorder);
     }
 
     @Bean(destroyMethod = "close")
