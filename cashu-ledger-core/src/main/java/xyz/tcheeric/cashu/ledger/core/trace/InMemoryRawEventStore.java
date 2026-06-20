@@ -24,6 +24,11 @@ public final class InMemoryRawEventStore implements RawEventStore {
     }
 
     @Override
+    public boolean remove(String eventId) {
+        return events.remove(eventId) != null;
+    }
+
+    @Override
     public long count() {
         return events.size();
     }

@@ -21,6 +21,12 @@ public interface RawEventStore {
 
     Optional<StoredEvent> findByEventId(String eventId);
 
+    /**
+     * Removes a stored raw event (e.g. a retention prune). Returns {@code true} if an event
+     * was removed. Index and tombstone rows are managed separately by the caller.
+     */
+    boolean remove(String eventId);
+
     /** Number of events held. */
     long count();
 }

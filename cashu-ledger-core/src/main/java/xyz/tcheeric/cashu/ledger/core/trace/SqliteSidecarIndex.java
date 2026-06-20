@@ -12,7 +12,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantLock;
 import xyz.tcheeric.cashu.ledger.trace.core.EventActivity;
+import xyz.tcheeric.cashu.ledger.trace.core.NostrEventMetadata;
 import xyz.tcheeric.cashu.ledger.trace.core.OperationKind;
+import xyz.tcheeric.cashu.ledger.trace.core.PrivacyMode;
 import xyz.tcheeric.cashu.ledger.trace.core.ProofRef;
 import xyz.tcheeric.cashu.ledger.trace.core.TraceEventQuery;
 import xyz.tcheeric.cashu.ledger.trace.core.TransactionEvent;
@@ -110,6 +112,11 @@ public final class SqliteSidecarIndex implements AutoCloseable {
                       issuer_id     TEXT,
                       issuer_pubkey TEXT,
                       PRIMARY KEY (mint_url, keyset_id, y)
+                    )""");
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS tombstones (
+                      event_id   TEXT PRIMARY KEY,
+                      pruned_at_s INTEGER NOT NULL
                     )""");
         }
     }
@@ -484,6 +491,86 @@ public final class SqliteSidecarIndex implements AutoCloseable {
     /** The outcome of a single proof-to-issuer back-fill. */
     public record IssuerBackfillResult(Outcome outcome, Optional<String> previousIssuerId, int rowsUpdated) {
         public enum Outcome { APPLIED, OVERWRITTEN, UNCHANGED }
+    }
+
+    /** Marks an event as pruned; its index and proof_ref rows are retained for traversal. */
+    public void recordTombstone(String eventId, long prunedAtS) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT OR REPLACE INTO tombstones (event_id, pruned_at_s) VALUES (?,?)")) {
+            ps.setString(1, eventId);
+            ps.setLong(2, prunedAtS);
+            ps.executeUpdate();
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to record tombstone for " + eventId, ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Whether an event has been pruned (its raw payload removed, join keys retained). */
+    public boolean isTombstoned(String eventId) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT 1 FROM tombstones WHERE event_id = ?")) {
+            ps.setString(1, eventId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to read tombstone for " + eventId, ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Number of pruned events. */
+    public long tombstoneCount() {
+        lock.lock();
+        try (Statement st = connection.createStatement();
+             ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM tombstones")) {
+            return rs.next() ? rs.getLong(1) : 0;
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to count tombstones", ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Reconstructs a proof-free skeleton event from the surviving index row, used to keep a
+     * pruned hop traversable in walks after its raw payload is gone.
+     */
+    public Optional<TransactionEvent> skeletonEvent(String eventId) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT operation_id, op, mint_url, unit, transition_at_ms, created_at_s, "
+                        + "producer_pubkey FROM events_index WHERE event_id = ?")) {
+            ps.setString(1, eventId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return Optional.empty();
+                }
+                Instant transitionAt = Instant.ofEpochMilli(rs.getLong("transition_at_ms"));
+                Instant createdAt = Instant.ofEpochSecond(rs.getLong("created_at_s"));
+                TransactionEvent skeleton = new TransactionEvent(
+                        Optional.of(eventId), rs.getString("operation_id"),
+                        OperationKind.fromWire(rs.getString("op")), rs.getString("mint_url"),
+                        rs.getString("unit"), transitionAt, createdAt,
+                        Optional.ofNullable(rs.getString("producer_pubkey")).orElse(""),
+                        Optional.empty(), List.of(), List.of(), List.of(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), PrivacyMode.MINIMAL, Optional.empty(), Optional.empty(), 1,
+                        new NostrEventMetadata(Optional.of(eventId), 9079, Optional.empty(),
+                                Optional.empty(), createdAt));
+                return Optional.of(skeleton);
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to build skeleton for " + eventId, ex);
+        } finally {
+            lock.unlock();
+        }
     }
 
     public Optional<String> eventIdForOperation(String operationId) {

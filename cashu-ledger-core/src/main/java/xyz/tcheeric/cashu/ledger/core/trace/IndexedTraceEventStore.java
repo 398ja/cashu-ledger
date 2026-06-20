@@ -35,7 +35,25 @@ public final class IndexedTraceEventStore implements TraceEventStore {
 
     @Override
     public Optional<StoredEvent> findByEventId(String eventId) {
-        return rawStore.findByEventId(eventId);
+        Optional<StoredEvent> raw = rawStore.findByEventId(eventId);
+        return raw.isPresent() ? raw : skeletonIfTombstoned(eventId);
+    }
+
+    /**
+     * Prunes an event: removes its raw payload but retains the index/proof_ref rows and records
+     * a tombstone, so the hop stays traversable as a pruned-event placeholder (design §5.11).
+     */
+    public boolean tombstone(String eventId) {
+        boolean removed = rawStore.remove(eventId);
+        index.recordTombstone(eventId, System.currentTimeMillis() / 1000L);
+        return removed;
+    }
+
+    private Optional<StoredEvent> skeletonIfTombstoned(String eventId) {
+        if (!index.isTombstoned(eventId)) {
+            return Optional.empty();
+        }
+        return index.skeletonEvent(eventId).map(StoredEvent::of);
     }
 
     @Override
@@ -128,7 +146,7 @@ public final class IndexedTraceEventStore implements TraceEventStore {
 
     private List<StoredEvent> resolve(List<String> eventIds) {
         return eventIds.stream()
-                .map(rawStore::findByEventId)
+                .map(this::findByEventId)
                 .filter(Optional::isPresent)
                 .map(Optional::get)
                 .toList();

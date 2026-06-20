@@ -27,10 +27,16 @@ public final class WalkService {
 
     private final TraceEventStore store;
     private final EdgeDeriver edgeDeriver;
+    private final Tombstones tombstones;
 
     public WalkService(TraceEventStore store, EdgeDeriver edgeDeriver) {
+        this(store, edgeDeriver, Tombstones.NONE);
+    }
+
+    public WalkService(TraceEventStore store, EdgeDeriver edgeDeriver, Tombstones tombstones) {
         this.store = store;
         this.edgeDeriver = edgeDeriver;
+        this.tombstones = tombstones;
     }
 
     /** Walks from a single anchor event. */
@@ -63,6 +69,7 @@ public final class WalkService {
         });
 
         boolean truncated = false;
+        int prunedCount = 0;
         Optional<String> cursor = Optional.empty();
         while (!queue.isEmpty()) {
             if (nodes.size() >= maxNodes) {
@@ -73,9 +80,13 @@ public final class WalkService {
             Frontier current = queue.poll();
             Optional<StoredEvent> stored = store.findByEventId(current.eventId());
             if (stored.isEmpty()) {
-                continue; // pruned hop; tombstone rendering is a later refinement
+                continue; // raw payload gone and not tombstoned: not reachable
             }
             nodes.add(toNode(stored.get().event()));
+            if (tombstones.isTombstoned(current.eventId())) {
+                prunedCount++; // pruned hop: render as placeholder, do not expand past it
+                continue;
+            }
             if (current.depth() >= depth) {
                 continue;
             }
@@ -86,7 +97,7 @@ public final class WalkService {
             }
         }
         return new WalkResult(direction.name().toLowerCase(), depth, nodes,
-                new ArrayList<>(edges.values()), truncated, cursor, 0);
+                new ArrayList<>(edges.values()), truncated, cursor, prunedCount);
     }
 
     /** Adds incident edges to the accumulator and returns the deterministically-sorted neighbour ids. */

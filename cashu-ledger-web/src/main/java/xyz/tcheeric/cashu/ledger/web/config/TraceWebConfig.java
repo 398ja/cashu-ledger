@@ -56,8 +56,9 @@ public class TraceWebConfig {
     }
 
     @Bean
-    public WalkService traceWalkService(TraceEventStore store, EdgeDeriver edgeDeriver) {
-        return new WalkService(store, edgeDeriver);
+    public WalkService traceWalkService(TraceEventStore store, EdgeDeriver edgeDeriver,
+                                        SqliteSidecarIndex index) {
+        return new WalkService(store, edgeDeriver, index::isTombstoned);
     }
 
     @Bean
