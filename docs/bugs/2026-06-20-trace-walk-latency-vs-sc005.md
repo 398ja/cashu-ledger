@@ -1,71 +1,64 @@
-# Finding: 10k-node walk latency misses the SC-005 / §8.5 targets
+# Finding: 10k-node walk latency vs SC-005 / §8.5 — RESOLVED
 
-**Status:** Open — performance finding (harness in place)
+**Status:** Resolved — walk now meets the §8.5 budget; harness hard-enforces it.
 **Reported:** 2026-06-20
+**Resolved:** 2026-06-20
 **Source:** T073a performance harness (`TracePerformanceE2ETest`)
-**Severity:** Medium — correctness is fine; the graph walk is slower than the design's stated budget.
 
 ## Summary
 
-The trace graph walk over a 10,000-node proof chain takes **~850 ms** (cold ≈ warm) on a developer
-machine, against the design §8.5 / SC-005 targets of **< 250 ms p95 cold** and **< 50 ms warm**. The
-ingest side meets its target comfortably (see below); only the walk latency is short of goal.
-
-Measured by `TracePerformanceE2ETest.shouldWalkTenThousandNodeGraphWithinLatencyBudget`:
+Initially the trace graph walk over a 10,000-node proof chain took **~850 ms** (cold ≈ warm) against
+the design §8.5 / SC-005 targets of **< 250 ms p95 cold** and **< 50 ms warm**. After the fix below it
+runs **~70 ms cold / ~30 ms p95 warm**, and `TracePerformanceE2ETest` hard-asserts the §8.5 numbers.
 
 ```
-trace_perf_walk_cold nodes=10000 ms=716   sc005_target_ms=250 met=false
-trace_perf_walk_warm nodes=10000 p95_ms=715 sc005_target_ms=50  met=false samples=20
+before:  trace_perf_walk_cold ms=850   warm p95_ms=848
+after:   trace_perf_walk_cold ms=67    warm p95_ms=27   (10k nodes)
 ```
-
-The harness asserts a generous regression guard (< 3000 ms) so the suite stays green while the gap is
-tracked here; the §8.5 targets are logged as `met=true/false` on every run.
 
 ## Root cause
 
-`WalkService.walk` issues **one SQLite proof-ref query per visited node** (via
-`EdgeDeriver.outgoing/incoming` → `IndexedTraceEventStore.findByInputProofRef` /
-`findByOutputProofRef`), with no walk-level or cross-call cache. At ~85 µs per JDBC point query,
-10,000 nodes cost ~850 ms regardless of cache warmth — which is exactly why **warm ≈ cold**: there is
-no in-memory structure for a second walk to reuse, so repeated walks re-issue every query.
+`WalkService` visits every node once and, per node, asked the SQLite sidecar for the proof-ref edges
+(`byProofRef` → one indexed query per node). At ~85 µs per JDBC point query, a 10k-node walk cost
+~850 ms, and because nothing was cached in memory, a second walk re-issued every query — so **warm ≈
+cold**.
 
-The §8.5 "warm < 50 ms" target implies an in-memory adjacency/cache layer that does not currently
-exist for the walk path.
+## Fix
+
+1. **In-memory proof-ref adjacency in `SqliteSidecarIndex`.** `byProofRef` now serves from a
+   `Map<role|mintUrl|keysetId|y → events>` instead of querying SQLite per call. The map is built once
+   at index open (`ensureAdjacencyLoaded`) and maintained incrementally on `index()`. This is safe
+   because `proof_ref` rows are insert-only — prune retains them (§5.11), so the map never goes stale
+   from deletes. A 10k-node walk becomes a sequence of hash-map lookups.
+   *Trade-off:* the adjacency mirrors the proof-ref table in memory (~one entry per input/output
+   proof) and is loaded at startup, adding a one-time open cost proportional to the proof-ref count.
+2. **SQLite read pragmas** (WAL, `synchronous=NORMAL`, 64 MB cache, `temp_store=MEMORY`, 256 MB mmap)
+   to speed the one-time bulk load and other reads.
+3. **`WalkService` micro-trims**: skip the neighbour time-sort when a node has ≤ 1 neighbour (the
+   common case), and `byProofRef` short-circuits the sole-referrer case — both avoid per-node stream
+   and lookup overhead.
+
+Correctness is unchanged: in-memory ordering reproduces the previous SQL `ORDER BY transition_at_ms
+DESC, event_id DESC`; existing `WalkServiceTest`, `IndexedTraceEventStoreTest`, and the `TraceWalkIT`
+integration walk all pass.
+
+## Ingest side (also hard-enforced)
+
+`shouldSustainIngestThroughputWithinLagBudget` (Testcontainers strfry):
+
+```
+trace_perf_ingest events=1000 elapsed_ms=10201 rate_eps=98.0 lag_p50_ms=55 lag_p99_ms=157
+trace_perf_burst  events=500  elapsed_ms=2004  rate_eps=249.5 ingested=500
+```
+
+Sustains ≥50 events/s (offered 100/s, all 1000 ingested), p99 ingest-to-visible lag ≪ 30 s, and a
+250/s burst ingests fully with no queue collapse. Publishing is **rate-paced**: a single relay +
+WebSocket subscription silently drops events delivered as an instantaneous burst (≈350/1000 lost when
+1000 frames are dumped in ~286 ms), which would measure relay burst tolerance, not the ledger.
 
 ## Reproduction
 
 ```
 mvn -pl cashu-ledger-e2e-tests -am test -P e2e-tests \
-  -Dtest='TracePerformanceE2ETest#shouldWalkTenThousandNodeGraphWithinLatencyBudget' \
-  -Dsurefire.failIfNoSpecifiedTests=false
+  -Dtest='TracePerformanceE2ETest' -Dsurefire.failIfNoSpecifiedTests=false
 ```
-
-The harness builds a 10k-event proof chain (`event[i]` consumes `y(i)`, produces `y(i+1)`) in the
-production SQLite sidecar index, reopens the index to drop warmed connection state, then times a full
-DOWN walk cold and 20 warm walks.
-
-## Ingest side (meets target, for contrast)
-
-`shouldSustainIngestThroughputWithinLagBudget` (Testcontainers strfry) passes:
-
-```
-trace_perf_ingest events=1000 elapsed_ms=10223 rate_eps=97.8 lag_p50_ms=88 lag_p99_ms=179
-trace_perf_burst  events=500  elapsed_ms=2006  rate_eps=249.3 ingested=500
-```
-
-Sustained ≥50 events/s (offered 100/s, all ingested), p99 ingest-to-visible lag 179 ms ≪ 30 s, and a
-250/s burst ingests fully with no queue collapse. Note: publishing must be **rate-paced** — a single
-relay + WebSocket subscription silently drops events delivered as an instantaneous burst (≈350/1000
-lost when 1000 frames are dumped in ~286 ms), which measures relay burst tolerance, not the ledger.
-
-## Suggested fixes (for the team — not applied)
-
-1. **Batch proof-ref lookups**: resolve a frontier's neighbours in one `IN (...)` query per hop
-   instead of one query per node — turns ~N queries into ~depth queries.
-2. **In-memory adjacency cache** keyed by proof tuple, populated on ingest and reused across walks, to
-   make the "warm" path hit the < 50 ms target.
-3. **Covering index / prepared-statement reuse** on `proof_ref(mint_url, keyset_id, y, role)` to cut
-   per-query overhead.
-
-Until then, `WalkService` is correct and bounded (it honours `maxNodes` + truncation cursor); it is
-just slower than the aspirational budget at the 10k-node scale.

@@ -58,9 +58,11 @@ import xyz.tcheeric.cashu.ledger.trace.publisher.TraceEventSigner;
  *       asserting &lt; 250 ms p95 cold and &lt; 50 ms warm.</li>
  * </ol>
  *
- * <p>Runs under the {@code e2e-tests} profile; the throughput benchmark skips cleanly when Docker
- * is unavailable. Achieved rates and percentiles are logged so regressions are visible even when
- * the (generously-margined) assertions still pass.</p>
+ * <p>Both benchmarks hard-enforce the SC-005 / §8.5 targets. The walk meets its budget because the
+ * sidecar index serves proof-ref edge lookups from an in-memory adjacency (built at index open,
+ * maintained on ingest) rather than one SQLite query per visited node. Runs under the
+ * {@code e2e-tests} profile; the throughput benchmark skips cleanly when Docker is unavailable.
+ * Achieved rates and percentiles are logged on every run.</p>
  */
 @Tag("e2e")
 class TracePerformanceE2ETest {
@@ -83,13 +85,9 @@ class TracePerformanceE2ETest {
     private static final int BURST_RATE_PER_SEC = 250;
 
     private static final int WALK_NODES = 10_000;
-    // §8.5 aspirational targets (logged, not yet met by the single-query-per-node walk).
-    private static final long WALK_COLD_TARGET_MS = 250;
-    private static final long WALK_WARM_TARGET_MS = 50;
-    // Regression guards calibrated to the measured ~850 ms (cold≈warm) with CI headroom. The gap to
-    // the §8.5 targets is documented in docs/bugs/2026-06-20-trace-walk-latency-vs-sc005.md.
-    private static final long WALK_COLD_BUDGET_MS = 3_000;
-    private static final long WALK_WARM_BUDGET_MS = 3_000;
+    // §8.5 targets, hard-enforced: served by the index's in-memory proof-ref adjacency.
+    private static final long WALK_COLD_BUDGET_MS = 250;
+    private static final long WALK_WARM_BUDGET_MS = 50;
 
     private SqliteSidecarIndex index;
     private TraceSyncEngine syncEngine;
@@ -230,18 +228,20 @@ class TracePerformanceE2ETest {
         WalkService walk = new WalkService(store, new EdgeDeriver(store));
 
         long coldMs = timeFullWalk(walk);
-        LOGGER.info("trace_perf_walk_cold nodes={} ms={} sc005_target_ms={} met={}",
-                WALK_NODES, coldMs, WALK_COLD_TARGET_MS, coldMs < WALK_COLD_TARGET_MS);
-        assertThat(coldMs).as("cold 10k-node walk (ms), regression guard").isLessThan(WALK_COLD_BUDGET_MS);
+        LOGGER.info("trace_perf_walk_cold nodes={} ms={} sc005_target_ms={}", WALK_NODES, coldMs, WALK_COLD_BUDGET_MS);
+        assertThat(coldMs).as("cold 10k-node walk p95 (ms), SC-005/§8.5").isLessThan(WALK_COLD_BUDGET_MS);
 
+        for (int i = 0; i < 5; i++) {
+            timeFullWalk(walk); // discard JIT warm-up iterations before sampling
+        }
         List<Long> warmMs = new ArrayList<>();
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 50; i++) {
             warmMs.add(timeFullWalk(walk));
         }
         long warmP95 = percentile(warmMs, 95);
-        LOGGER.info("trace_perf_walk_warm nodes={} p95_ms={} sc005_target_ms={} met={} samples={}",
-                WALK_NODES, warmP95, WALK_WARM_TARGET_MS, warmP95 < WALK_WARM_TARGET_MS, warmMs.size());
-        assertThat(warmP95).as("warm 10k-node walk p95 (ms), regression guard").isLessThan(WALK_WARM_BUDGET_MS);
+        LOGGER.info("trace_perf_walk_warm nodes={} p95_ms={} sc005_target_ms={} samples={}",
+                WALK_NODES, warmP95, WALK_WARM_BUDGET_MS, warmMs.size());
+        assertThat(warmP95).as("warm 10k-node walk p95 (ms), SC-005/§8.5").isLessThan(WALK_WARM_BUDGET_MS);
     }
 
     private long timeFullWalk(WalkService walk) {
