@@ -46,6 +46,7 @@
         <testcontainers.version>1.21.3</testcontainers.version>
         <selenium.version>4.27.0</selenium.version>
         <cashu-lib-crypto.version>0.9.1</cashu-lib-crypto.version>
+        <opentelemetry.version>1.45.0</opentelemetry.version>
 
         <!-- The test-only modules are always part of the reactor (so IDEs import
              them), but their tests run only under the matching profile below. -->
