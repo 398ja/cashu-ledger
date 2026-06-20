@@ -1241,7 +1241,7 @@ Each phase is independently shippable. Tasks track in the same per-task table st
 |-------|---------------------------------------------------------------------------------------|------|------------|---------|--------|
 | T1.1  | Add `cashu-ledger-trace-core` module with `OperationKind`, `ProofRef`, `TransactionEvent`, `PrivacyMode` records | M    | -          | Done    | d77b415 |
 | T1.2  | Define Nostr event schema (kind 9079) + canonical JSON serialiser                      | M    | T1.1       | Done    | d77b415 |
-| T1.3  | Reserve / document the kind via internal ADR; add `schema_version` plumbing            | S    | T1.2       | Partial | d77b415 — `schema_version` plumbed (`CURRENT_SCHEMA_VERSION` + tag); kind-9079 ADR not yet written |
+| T1.3  | Reserve / document the kind via internal ADR; add `schema_version` plumbing            | S    | T1.2       | Partial | 27e3928 — four-tier schema ladder; kind-9079 ADR pending |
 | T1.4  | Unit tests for canonical serialisation, redaction, deterministic event id              | M    | T1.2       | Done    | d77b415 — golden per-kind id vectors deferred |
 
 ### Phase T2: Producer SDK
@@ -1250,9 +1250,9 @@ Each phase is independently shippable. Tasks track in the same per-task table st
 |-------|---------------------------------------------------------------------------------------|------|-------------|---------|--------|
 | T2.1  | Add `cashu-ledger-trace-publisher` module with `TraceabilityPublisher` API            | M    | T1.x        | Done    | eb90d5c, 6f57677 — module/outbox/op-id then signer + DefaultTraceabilityPublisher + RelayPublisher SPI |
 | T2.2  | `OutboxStore` abstraction + `InMemoryOutboxStore` + `SqliteOutboxStore`                | L    | T2.1        | Done    | eb90d5c |
-| T2.3  | `OutboxDispatcher` with backoff and metrics                                            | M    | T2.2        | Done    | 6f57677 — backoff + drain; live nostr-java RelayPublisher impl + adaptive cadence deferred |
-| T2.4  | Spring Boot autoconfigure starter for the publisher                                   | S    | T2.3        | Pending | -      |
-| T2.5  | OpenTelemetry instrumentation                                                          | S    | T2.3        | Pending | -      |
+| T2.3  | `OutboxDispatcher` with backoff and metrics                                            | M    | T2.2        | Done | 6f57677, 323bd2c — backoff + live RelayPublisher |
+| T2.4  | Spring Boot autoconfigure starter for the publisher                                   | S    | T2.3        | Done | 7d9c9d5 |
+| T2.5  | OpenTelemetry instrumentation                                                          | S    | T2.3        | Done | 9823ccb |
 
 ### Phase T3: Ledger Storage and Sync
 
@@ -1260,8 +1260,8 @@ Each phase is independently shippable. Tasks track in the same per-task table st
 |-------|---------------------------------------------------------------------------------------|------|-------------|---------|--------|
 | T3.1  | Implement `TraceEventStore` (nostrdb + SQLite sidecar) with kind-9079 indexes          | L    | T1.x        | Partial | dec818a — SQLite sidecar + IndexedTraceEventStore over a pluggable RawEventStore; nostrdb-backed RawEventStore adapter deferred |
 | T3.2  | `TraceSyncEngine` mirroring the `ClientSyncEngine` pattern                            | L    | T3.1        | Done    | ad302e4, 5d93600 — kind-9079 subscription + ingest service; relay-backed Testcontainers integration test (T038) proves relay-compat |
-| T3.3  | Cross-link with voucher events: index `voucher_ref` and surface in voucher detail     | M    | T3.1        | Pending | -      |
-| T3.4  | `EVENT_PRUNED` audit emission and configurable retention                              | M    | T3.1        | Pending | -      |
+| T3.3  | Cross-link with voucher events: index `voucher_ref` and surface in voucher detail     | M    | T3.1        | Done | fde87f8, 2ee4447, f4a542b |
+| T3.4  | `EVENT_PRUNED` audit emission and configurable retention                              | M    | T3.1        | Done | cecb8a1, 974c367 |
 
 ### Phase T4: Read API
 
@@ -1270,35 +1270,35 @@ Each phase is independently shippable. Tasks track in the same per-task table st
 | T4.1  | `TraceQueryService` in `cashu-ledger-core`                                            | L    | T3.x        | Done    | 540eb15 — cursor pagination + grouped proof history |
 | T4.2  | REST controllers under `/api/v1/trace` in `cashu-ledger-web` with NIP-98 auth         | L    | T4.1        | Done    | 77c10ea — events/event/operation/proofs/stats + access-level shaping; quote/walk/visualisation endpoints follow with their stories |
 | T4.3  | Authority resolution (`trace:read:summary` / `:hashed` / `:full` / `trace:admin`)     | M    | T4.2        | Done    | dedb0b2 — NIP-98 filter + AuthorityResolver + access shaping |
-| T4.4  | SSE endpoint `/api/v1/trace/stream` for live ingestion notifications                  | M    | T4.2        | Pending | -      |
-| T4.5  | OpenAPI spec generation                                                                | S    | T4.2        | Pending | -      |
+| T4.4  | SSE endpoint `/api/v1/trace/stream` for live ingestion notifications                  | M    | T4.2        | Done | e2457e8, 254589f |
+| T4.5  | OpenAPI spec generation                                                                | S    | T4.2        | Done | 43442fa |
 
 ### Phase T5: CLI
 
 | ID    | Task                                                                                  | Size | Depends On  | Status  | Commit |
 |-------|---------------------------------------------------------------------------------------|------|-------------|---------|--------|
-| T5.1  | `cashu-ledger trace event/operation/proof/events/voucher/quote/stats` subcommands      | L    | T4.1        | Pending | -      |
-| T5.2  | `trace export` with json/csv/graphml                                                  | M    | T5.1        | Pending | -      |
-| T5.3  | ASCII DAG renderer for `--output tree`                                                | M    | T5.1        | Pending | -      |
+| T5.1  | `cashu-ledger trace event/operation/proof/events/voucher/quote/stats` subcommands      | L    | T4.1        | Partial | 18716a5 — proof/voucher/issuer; event/operation/quote/stats deferred |
+| T5.2  | `trace export` with json/csv/graphml                                                  | M    | T5.1        | Partial | 0be01ab — export --sanitise; json/csv/graphml deferred |
+| T5.3  | ASCII DAG renderer for `--output tree`                                                | M    | T5.1        | Done | 18716a5 |
 
 ### Phase T6: Web Visualisation
 
 | ID    | Task                                                                                  | Size | Depends On  | Status  | Commit |
 |-------|---------------------------------------------------------------------------------------|------|-------------|---------|--------|
-| T6.1  | `/trace` page skeleton, anchor input, filter rail                                     | M    | T4.x        | Pending | -      |
-| T6.2  | Cytoscape.js graph rendering with dagre layout                                        | L    | T6.1        | Pending | -      |
-| T6.3  | Drill-down panel with full payload (mode-respecting)                                  | M    | T6.2        | Pending | -      |
-| T6.4  | "Anchor here" / "Expand neighbours" / "Truncated" UX                                   | M    | T6.2        | Pending | -      |
-| T6.5  | Live updates via SSE                                                                  | M    | T4.4, T6.2  | Pending | -      |
-| T6.6  | Privacy banner and authority-aware UI degradation                                     | S    | T6.3        | Pending | -      |
+| T6.1  | `/trace` page skeleton, anchor input, filter rail                                     | M    | T4.x        | Done | 4bd45c7 |
+| T6.2  | Cytoscape.js graph rendering with dagre layout                                        | L    | T6.1        | Done | b4aae8e, 4bd45c7 |
+| T6.3  | Drill-down panel with full payload (mode-respecting)                                  | M    | T6.2        | Done | 4bd45c7 |
+| T6.4  | "Anchor here" / "Expand neighbours" / "Truncated" UX                                   | M    | T6.2        | Done | 4bd45c7 |
+| T6.5  | Live updates via SSE                                                                  | M    | T4.4, T6.2  | Done | 4bd45c7 |
+| T6.6  | Privacy banner and authority-aware UI degradation                                     | S    | T6.3        | Done | 4bd45c7 |
 
 ### Phase T7: Operations
 
 | ID    | Task                                                                                  | Size | Depends On  | Status  | Commit |
 |-------|---------------------------------------------------------------------------------------|------|-------------|---------|--------|
-| T7.1  | Prometheus metrics + Grafana dashboards                                                | M    | T2.x, T3.x  | Pending | -      |
-| T7.2  | Runbook in `docs/how-to/`                                                              | S    | T6.x        | Pending | -      |
-| T7.3  | Backfill tool (`cashu-ledger trace replay <log-file>`)                                 | M    | T2.x        | Pending | -      |
+| T7.1  | Prometheus metrics + Grafana dashboards                                                | M    | T2.x, T3.x  | Done | 1a29ba9 |
+| T7.2  | Runbook in `docs/how-to/`                                                              | S    | T6.x        | Done | 6584059 |
+| T7.3  | Backfill tool (`cashu-ledger trace replay <log-file>`)                                 | M    | T2.x        | Done | 4331fcd |
 | T7.4  | Load test harness                                                                     | M    | T3.x        | Pending | -      |
 
 ### Cross-Cutting
