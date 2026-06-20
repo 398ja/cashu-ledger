@@ -7,6 +7,7 @@ import xyz.tcheeric.cashu.ledger.core.trace.SqliteSidecarIndex;
 import xyz.tcheeric.cashu.ledger.trace.core.LightningRef;
 import xyz.tcheeric.cashu.ledger.trace.core.PrivacyMode;
 import xyz.tcheeric.cashu.ledger.trace.core.ProofRef;
+import xyz.tcheeric.cashu.ledger.trace.core.SchemaCompatibility;
 import xyz.tcheeric.cashu.ledger.trace.core.StoredEvent;
 import xyz.tcheeric.cashu.ledger.trace.core.TransactionEvent;
 import xyz.tcheeric.cashu.ledger.web.security.TraceAuthority;
@@ -66,7 +67,8 @@ public final class TraceResponseMapper {
                 activity.reason(),
                 e.feeAmount().orElse(null),
                 returned.wireValue(),
-                e.schemaVersion());
+                e.schemaVersion(),
+                SchemaCompatibility.isDeprecated(e.schemaVersion(), TransactionEvent.CURRENT_SCHEMA_VERSION));
     }
 
     public List<EventView> toViews(List<StoredEvent> events, TracePrincipal principal) {

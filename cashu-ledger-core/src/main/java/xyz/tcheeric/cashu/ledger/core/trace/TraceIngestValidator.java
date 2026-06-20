@@ -5,8 +5,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.LongSupplier;
 import nostr.crypto.schnorr.Schnorr;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import xyz.tcheeric.cashu.ledger.trace.core.CanonicalJson;
 import xyz.tcheeric.cashu.ledger.trace.core.OperationInvariants;
+import xyz.tcheeric.cashu.ledger.trace.core.SchemaCompatibility;
 import xyz.tcheeric.cashu.ledger.trace.core.TransactionEvent;
 
 /**
@@ -17,6 +20,7 @@ import xyz.tcheeric.cashu.ledger.trace.core.TransactionEvent;
  */
 public final class TraceIngestValidator {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(TraceIngestValidator.class);
     private static final HexFormat HEX = HexFormat.of();
 
     private final ProducerAttestationConfig producers;
@@ -103,16 +107,19 @@ public final class TraceIngestValidator {
     }
 
     private Optional<IngestRejection> checkSchemaVersion(int version) {
-        if (version > currentSchemaVersion) {
-            return reject("TRACE_FUTURE_SCHEMA",
+        return switch (SchemaCompatibility.classify(version, currentSchemaVersion)) {
+            case FUTURE -> reject("TRACE_FUTURE_SCHEMA",
                     "schema_version " + version + " is newer than the ledger supports ("
                             + currentSchemaVersion + ")");
-        }
-        if (version < currentSchemaVersion - 2) {
-            return reject("TRACE_UNSUPPORTED_SCHEMA",
+            case UNSUPPORTED -> reject("TRACE_UNSUPPORTED_SCHEMA",
                     "schema_version " + version + " is no longer accepted");
-        }
-        return Optional.empty();
+            case DEPRECATED -> {
+                LOGGER.warn("TRACE_DEPRECATED_SCHEMA schema_version={} current={}",
+                        version, currentSchemaVersion);
+                yield Optional.empty();
+            }
+            case ACCEPTED -> Optional.empty();
+        };
     }
 
     private Optional<IngestRejection> checkClockSkew(long createdAtSeconds, boolean allowHistorical) {

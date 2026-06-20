@@ -29,6 +29,7 @@ public record EventView(
         String activityReason,
         Long feeAmount,
         String returnedPrivacyMode,
-        int schemaVersion
+        int schemaVersion,
+        boolean schemaDeprecated
 ) {
 }

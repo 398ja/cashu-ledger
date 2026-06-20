@@ -27,6 +27,7 @@ import xyz.tcheeric.cashu.ledger.core.trace.WalkService;
 import xyz.tcheeric.cashu.ledger.trace.core.EventActivity;
 import xyz.tcheeric.cashu.ledger.trace.core.IndexStatus;
 import xyz.tcheeric.cashu.ledger.trace.core.OperationKind;
+import xyz.tcheeric.cashu.ledger.trace.core.SchemaCompatibility;
 import xyz.tcheeric.cashu.ledger.trace.core.StoredEvent;
 import xyz.tcheeric.cashu.ledger.trace.core.TraceEventQuery;
 import xyz.tcheeric.cashu.ledger.trace.core.TraceEventStore;
@@ -255,11 +256,12 @@ public class TraceController {
     @GetMapping("/relays")
     public ResponseEntity<RelaysView> relays(HttpServletRequest request) {
         TracePrincipal principal = principal(request);
+        int current = TransactionEvent.CURRENT_SCHEMA_VERSION;
         RelaysView view = new RelaysView(
                 ledgerProperties.getRelays(),
-                TransactionEvent.CURRENT_SCHEMA_VERSION,
-                List.of(TransactionEvent.CURRENT_SCHEMA_VERSION),
-                List.of());
+                current,
+                SchemaCompatibility.supportedVersions(current),
+                SchemaCompatibility.deprecatedVersions(current));
         audit(principal, "/relays", null, ledgerProperties.getRelays().size(), false);
         return ResponseEntity.ok(view);
     }
