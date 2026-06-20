@@ -15,7 +15,8 @@ import picocli.CommandLine;
         subcommands = {
                 TraceProofCommand.class,
                 TraceVoucherCommand.class,
-                TraceIssuerCommand.class
+                TraceIssuerCommand.class,
+                ReplayCommand.class
         })
 public class TraceCommand implements Runnable {
 

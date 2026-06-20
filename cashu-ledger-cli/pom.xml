@@ -49,6 +49,13 @@
             <version>${cashu-lib-crypto.version}</version>
         </dependency>
 
+        <!-- Deterministic backfill operation ids + event signing for the replay tool -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-ledger-trace-publisher</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
