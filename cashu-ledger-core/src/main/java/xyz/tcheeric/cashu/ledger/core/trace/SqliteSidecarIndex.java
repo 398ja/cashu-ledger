@@ -524,6 +524,39 @@ public final class SqliteSidecarIndex implements AutoCloseable {
         }
     }
 
+    /** Oldest not-yet-pruned event ids with {@code transition_at} before the cutoff, for age pruning. */
+    public List<String> pruneCandidatesByAge(long cutoffMs, int limit) {
+        return pruneCandidates(cutoffMs, limit, false);
+    }
+
+    /** Oldest not-yet-pruned <em>terminal</em> event ids before the cutoff, for sub-DAG pruning. */
+    public List<String> terminalPruneCandidates(long cutoffMs, int limit) {
+        return pruneCandidates(cutoffMs, limit, true);
+    }
+
+    private List<String> pruneCandidates(long cutoffMs, int limit, boolean terminalOnly) {
+        String sql = "SELECT event_id FROM events_index WHERE transition_at_ms < ? "
+                + (terminalOnly ? "AND activity = 'terminal' " : "")
+                + "AND event_id NOT IN (SELECT event_id FROM tombstones) "
+                + "ORDER BY transition_at_ms ASC LIMIT ?";
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, cutoffMs);
+            ps.setInt(2, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<String> ids = new ArrayList<>();
+                while (rs.next()) {
+                    ids.add(rs.getString(1));
+                }
+                return ids;
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to query prune candidates", ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
     /** Number of pruned events. */
     public long tombstoneCount() {
         lock.lock();
