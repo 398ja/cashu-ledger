@@ -35,6 +35,7 @@ import xyz.tcheeric.cashu.ledger.web.trace.EventPageView;
 import xyz.tcheeric.cashu.ledger.web.trace.EventView;
 import xyz.tcheeric.cashu.ledger.web.trace.RelaysView;
 import xyz.tcheeric.cashu.ledger.web.trace.StatsView;
+import xyz.tcheeric.cashu.ledger.web.trace.TraceAccessAuditSink;
 import xyz.tcheeric.cashu.ledger.web.trace.TraceResponseMapper;
 
 /**
@@ -55,17 +56,20 @@ public class TraceController {
     private final WalkService walkService;
     private final VisualisationService visualisationService;
     private final WebLedgerProperties ledgerProperties;
+    private final TraceAccessAuditSink auditSink;
 
     public TraceController(TraceQueryService queryService, TraceEventStore store,
                           TraceResponseMapper mapper, WalkService walkService,
                           VisualisationService visualisationService,
-                          WebLedgerProperties ledgerProperties) {
+                          WebLedgerProperties ledgerProperties,
+                          TraceAccessAuditSink auditSink) {
         this.queryService = queryService;
         this.store = store;
         this.mapper = mapper;
         this.walkService = walkService;
         this.visualisationService = visualisationService;
         this.ledgerProperties = ledgerProperties;
+        this.auditSink = auditSink;
     }
 
     @GetMapping("/events")
@@ -339,9 +343,12 @@ public class TraceController {
         return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store");
     }
 
-    private static void audit(TracePrincipal principal, String endpoint, String anchor,
-                              int resultSize, boolean payloadRevealed) {
+    private void audit(TracePrincipal principal, String endpoint, String anchor,
+                       int resultSize, boolean payloadRevealed) {
         ACCESS_LOG.info("trace_read actor={} endpoint={} anchor={} result_size={} payload_revealed={}",
                 principal.pubkey(), endpoint, anchor, resultSize, payloadRevealed);
+        auditSink.record(new TraceAccessAuditSink.AccessEntry(
+                System.currentTimeMillis(), principal.pubkey(), endpoint, anchor,
+                resultSize, payloadRevealed));
     }
 }

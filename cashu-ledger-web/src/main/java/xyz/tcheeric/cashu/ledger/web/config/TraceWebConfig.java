@@ -1,10 +1,13 @@
 package xyz.tcheeric.cashu.ledger.web.config;
 
+import java.util.HexFormat;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import xyz.tcheeric.cashu.ledger.web.security.TraceIssuerProperties;
+import xyz.tcheeric.cashu.ledger.web.security.TraceSecurityProperties;
+import xyz.tcheeric.cashu.ledger.core.trace.RedactionKeyRegistry;
 import xyz.tcheeric.cashu.ledger.core.trace.EdgeDeriver;
 import xyz.tcheeric.cashu.ledger.core.trace.IndexedTraceEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.InMemoryRawEventStore;
@@ -59,5 +62,10 @@ public class TraceWebConfig {
     @Bean
     public VisualisationService traceVisualisationService() {
         return new VisualisationService();
+    }
+
+    @Bean
+    public RedactionKeyRegistry redactionKeyRegistry(TraceSecurityProperties securityProperties) {
+        return new RedactionKeyRegistry(HexFormat.of().parseHex(securityProperties.getRedactionMasterKeyHex()));
     }
 }
