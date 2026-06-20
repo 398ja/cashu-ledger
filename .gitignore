@@ -4,3 +4,9 @@
 
 # Maven build output
 **/target/
+/.claude/
+/.specify/
+/specs/
+
+# jqwik property-test database
+.jqwik-database

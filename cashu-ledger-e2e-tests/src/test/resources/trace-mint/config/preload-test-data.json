@@ -1,0 +1,19 @@
+{
+  "mintId": "1f240ace-0e4e-42dd-bdcb-9ad4ce8eaeae",
+  "keySetId": "00e3372e61d05605",
+  "keySetRowId": "a086d577-d938-307b-a14d-e729caaeddf2",
+  "unit": "sat",
+  "keys": [
+    { "id": "a0f1e55f-5d4b-351f-98f9-77677c3f52ce", "amount": 1, "privateKeyHex": "4fbf609f4d521cf57b93bba3c530d7be1a1e5da7186c2d33990f0a4ead82ccf4" },
+    { "id": "65b31ecd-6830-3329-9132-ae895dbe0928", "amount": 2, "privateKeyHex": "34087457fc5668d84c4adb282b6d6504aee920444a76ad802a496f0470b63bd4" },
+    { "id": "8d186843-76e7-301e-b704-ae3ff1fae3e3", "amount": 4, "privateKeyHex": "96764f964f8e8f606a104fb107f4bb1566004babb1b1902379a97de8d5f726cc" },
+    { "id": "8535f2eb-f83e-3280-b664-9d52f64f9b37", "amount": 8, "privateKeyHex": "0810f116d6b98fac26fd4529464d234457804e110a398dd69845ca6b68898142" },
+    { "id": "dd8f0238-d817-3404-a48d-3177545a32db", "amount": 16, "privateKeyHex": "1c5b94ffb5f3f434ef4f7820348b8b2e9f21db8c362daa5b094c8975f9a611b2" },
+    { "id": "ed792a7d-6016-31e9-86d9-677abaebb65c", "amount": 32, "privateKeyHex": "c7ed093f604d897091b3b6e34f3005e27e8e8b7e984757153426c1c244e74324" },
+    { "id": "56f3bb2f-a11d-367b-b204-d4dfb00f46ac", "amount": 64, "privateKeyHex": "7f92c62917f281775e2b27d7121cbf135c0583e33e6594d8798325919909bca6" },
+    { "id": "35dc585c-1d8b-3d45-932d-cb6574bc6978", "amount": 128, "privateKeyHex": "f242e9ec2a6854a626cdfbeefe3ceddaf31f498376f90284188645b8c44a8dd6" },
+    { "id": "a3d5a1e2-1c2b-4f0a-9a11-d8f9b7a6c5e4", "amount": 256, "privateKeyHex": "111122223333444455556666777788889999aaaabbbbccccddddeeeeffff0000" },
+    { "id": "b4e6c2d3-2d3e-5a1b-8b22-e7f0c9d8e7f0", "amount": 512, "privateKeyHex": "0000fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2" },
+    { "id": "c5f7d3e4-3e4f-6b2c-7c33-f6e1d0cfe6e1", "amount": 1024, "privateKeyHex": "abcdef0123456789fedcba9876543210abcdef0123456789fedcba9876543210" }
+  ]
+}

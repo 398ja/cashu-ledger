@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [0.3.0] - 2026-06-20
+
+### Added
+
+- **Transaction Traceability** — a chain-of-custody DAG over Cashu mint/swap/melt/send/receive operations, published as signed kind-9079 Nostr events and served by an operator-internal read API.
+  - New modules `cashu-ledger-trace-core` (schema, canonical JSON, redaction, invariants) and `cashu-ledger-trace-publisher` (embeddable producer SDK: durable outbox, signer, deterministic operation ids, nostr relay transport, Spring Boot starter, OpenTelemetry, reconciler).
+  - Ledger ingest (opt-in `trace.ingest.enabled`): relay sync engine, voucher-state watcher, validating ingest with producer attestation, dedup/conflict/clock-skew, SQLite sidecar index, activity classification cache, and issuer back-fill.
+  - Read API under `/api/v1/trace` (NIP-98 authenticated, access-shaped): events, operations, proof history, forensic walk, voucher/issuer listings, visualisation graph, stats, relays, SSE stream, and admin redaction-key/access-log/index-status surfaces.
+  - `cashu-ledger trace` CLI: `proof` (client-side Y derivation), `voucher`, `issuer`, `replay` (idempotent backfill), `export --sanitise`.
+  - Web graph explorer (Cytoscape/dagre) with drill-down, privacy banner, and live updates.
+  - Minimal tombstone pruning and a retention engine (age + terminal sub-DAG); Prometheus metrics + Grafana dashboard; OpenAPI spec; schema-evolution four-tier ladder.
+
+### Security
+
+- Trace events are published only to private, authenticated relays; read responses are shaped to the caller's authority so a summary-level caller never receives secret-bearing fields; redaction keys are stored encrypted at rest; sanitised export re-keys secrets under an ephemeral key.
+
 ## [0.2.2] - 2026-01-10
 
 ### Fixed

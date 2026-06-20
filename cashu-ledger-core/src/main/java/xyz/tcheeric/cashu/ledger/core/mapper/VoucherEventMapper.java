@@ -1,6 +1,5 @@
 package xyz.tcheeric.cashu.ledger.core.mapper;
 
-import nostr.base.ElementAttribute;
 import nostr.base.PublicKey;
 import nostr.event.BaseTag;
 import nostr.event.impl.GenericEvent;
@@ -106,15 +105,12 @@ public class VoucherEventMapper {
             }
 
             String code = genericTag.getCode();
-            List<ElementAttribute> attributes = genericTag.getAttributes() != null
-                    ? genericTag.getAttributes()
+            List<String> attributes = genericTag.getParams() != null
+                    ? genericTag.getParams()
                     : List.of();
             List<String> rawList = new ArrayList<>();
             rawList.add(code);
-            attributes.stream()
-                    .map(ElementAttribute::value)
-                    .map(Object::toString)
-                    .forEach(rawList::add);
+            rawList.addAll(attributes);
             values.rawTags.add(rawList);
 
             switch (code) {
@@ -153,21 +149,20 @@ public class VoucherEventMapper {
         return values;
     }
 
-    private ParentContribution parseParent(List<ElementAttribute> attributes) {
+    private ParentContribution parseParent(List<String> attributes) {
         String parentId = attributeValue(attributes, 0);
         long contributedTokens = parseLong(attributeValue(attributes, 1), 0L);
         long contributedFace = parseLong(attributeValue(attributes, 2), 0L);
         return new ParentContribution(parentId, contributedTokens, contributedFace);
     }
 
-    private List<String> parseSplitInto(List<ElementAttribute> attributes) {
+    private List<String> parseSplitInto(List<String> attributes) {
         List<String> values = new ArrayList<>();
-        for (ElementAttribute attribute : attributes) {
-            Object val = attribute.value();
+        for (String val : attributes) {
             if (val == null) {
                 continue;
             }
-            for (String candidate : val.toString().split(",")) {
+            for (String candidate : val.split(",")) {
                 if (!candidate.isBlank()) {
                     values.add(candidate.trim());
                 }
@@ -176,14 +171,14 @@ public class VoucherEventMapper {
         return values;
     }
 
-    private String attributeValue(List<ElementAttribute> attributes, int index) {
+    private String attributeValue(List<String> attributes, int index) {
         return attributeValue(attributes, index, null);
     }
 
-    private String attributeValue(List<ElementAttribute> attributes, int index, String defaultValue) {
+    private String attributeValue(List<String> attributes, int index, String defaultValue) {
         if (index < attributes.size()) {
-            Object value = attributes.get(index).value();
-            return value != null ? value.toString() : defaultValue;
+            String value = attributes.get(index);
+            return value != null ? value : defaultValue;
         }
         return defaultValue;
     }

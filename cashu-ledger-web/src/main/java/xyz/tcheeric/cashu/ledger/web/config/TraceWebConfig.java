@@ -1,0 +1,122 @@
+package xyz.tcheeric.cashu.ledger.web.config;
+
+import java.time.Clock;
+import java.util.HexFormat;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import xyz.tcheeric.cashu.ledger.web.security.TraceIssuerProperties;
+import xyz.tcheeric.cashu.ledger.web.security.TraceSecurityProperties;
+import xyz.tcheeric.cashu.ledger.core.trace.ActivityCache;
+import xyz.tcheeric.cashu.ledger.core.trace.RedactionKeyRegistry;
+import xyz.tcheeric.cashu.ledger.core.trace.TombstoneStore;
+import xyz.tcheeric.cashu.ledger.core.trace.EdgeDeriver;
+import xyz.tcheeric.cashu.ledger.core.trace.IndexReconciler;
+import xyz.tcheeric.cashu.ledger.core.trace.IndexedTraceEventStore;
+import xyz.tcheeric.cashu.ledger.core.trace.InMemoryRawEventStore;
+import xyz.tcheeric.cashu.ledger.core.trace.NostrDbRawEventStore;
+import xyz.tcheeric.cashu.ledger.core.trace.RawEventStore;
+import xyz.tcheeric.cashu.ledger.core.trace.SqliteSidecarIndex;
+import xyz.tcheeric.cashu.ledger.core.trace.QuoteStatusService;
+import xyz.tcheeric.cashu.ledger.core.trace.TraceQueryService;
+import xyz.tcheeric.cashu.ledger.core.trace.VisualisationService;
+import xyz.tcheeric.cashu.ledger.core.trace.WalkService;
+import xyz.tcheeric.cashu.ledger.trace.core.TraceEventStore;
+
+/**
+ * Wires the trace read path into the web context: the SQLite sidecar, the raw-event
+ * store, the indexed store, and the query service. The raw store is currently
+ * in-memory; a nostrdb-backed implementation and the sync engine are wired in a
+ * follow-up (this checkpoint covers the read API).
+ */
+@Configuration
+@EnableConfigurationProperties({TraceIssuerProperties.class, TraceLimitsProperties.class})
+public class TraceWebConfig {
+
+    @Bean(destroyMethod = "close")
+    public SqliteSidecarIndex traceSidecarIndex(
+            @Value("${trace.storage.sidecar-jdbc-url:jdbc:sqlite::memory:}") String jdbcUrl) {
+        return new SqliteSidecarIndex(jdbcUrl);
+    }
+
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(prefix = "trace.storage", name = "nostrdb-enabled", havingValue = "true")
+    public RawEventStore nostrdbRawEventStore(
+            @Value("${trace.storage.nostrdb-path:${user.home}/.cashu-ledger/trace-ndb}") String path) {
+        return NostrDbRawEventStore.open(java.nio.file.Path.of(path));
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(RawEventStore.class)
+    public RawEventStore inMemoryRawEventStore() {
+        return new InMemoryRawEventStore();
+    }
+
+    @Bean
+    public IndexedTraceEventStore traceEventStore(RawEventStore rawEventStore, SqliteSidecarIndex index) {
+        return new IndexedTraceEventStore(rawEventStore, index);
+    }
+
+    /**
+     * On startup, rebuild the (possibly in-memory) sidecar from the durable nostrdb store so the
+     * index reflects the system of record after a restart (design §5.4 rebuild, T030).
+     */
+    @Bean
+    public org.springframework.boot.ApplicationRunner traceSidecarRebuild(
+            RawEventStore rawEventStore, SqliteSidecarIndex index) {
+        return args -> {
+            if (rawEventStore instanceof NostrDbRawEventStore nostrdb && index.count() < nostrdb.count()) {
+                nostrdb.reindex(index);
+            }
+        };
+    }
+
+    @Bean
+    public TombstoneStore traceTombstoneStore(IndexedTraceEventStore store) {
+        return new TombstoneStore(store);
+    }
+
+    @Bean
+    public TraceQueryService traceQueryService(TraceEventStore store, SqliteSidecarIndex index) {
+        return new TraceQueryService(store, index);
+    }
+
+    @Bean
+    public EdgeDeriver traceEdgeDeriver(TraceEventStore store) {
+        return new EdgeDeriver(store);
+    }
+
+    @Bean
+    public WalkService traceWalkService(TraceEventStore store, EdgeDeriver edgeDeriver,
+                                        SqliteSidecarIndex index) {
+        return new WalkService(store, edgeDeriver, index::isTombstoned);
+    }
+
+    @Bean
+    public VisualisationService traceVisualisationService() {
+        return new VisualisationService();
+    }
+
+    @Bean
+    public RedactionKeyRegistry redactionKeyRegistry(TraceSecurityProperties securityProperties) {
+        return new RedactionKeyRegistry(HexFormat.of().parseHex(securityProperties.getRedactionMasterKeyHex()));
+    }
+
+    @Bean
+    public ActivityCache traceActivityCache(SqliteSidecarIndex index) {
+        return new ActivityCache(index);
+    }
+
+    @Bean
+    public QuoteStatusService traceQuoteStatusService(TraceEventStore store, SqliteSidecarIndex index) {
+        return new QuoteStatusService(store, index, Clock.systemUTC());
+    }
+
+    @Bean
+    public IndexReconciler traceIndexReconciler(IndexedTraceEventStore store) {
+        return new IndexReconciler(store);
+    }
+}

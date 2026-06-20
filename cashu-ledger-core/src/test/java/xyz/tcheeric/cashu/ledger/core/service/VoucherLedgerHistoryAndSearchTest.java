@@ -1,6 +1,5 @@
 package xyz.tcheeric.cashu.ledger.core.service;
 
-import nostr.base.ElementAttribute;
 import nostr.base.PublicKey;
 import nostr.event.impl.GenericEvent;
 import nostr.event.tag.GenericTag;
@@ -91,24 +90,16 @@ class VoucherLedgerHistoryAndSearchTest {
         event.setPubKey(new PublicKey("a".repeat(64)));
         event.setKind(30078);
         event.setCreatedAt(createdAt.getEpochSecond());
-        List<ElementAttribute> dAttrs = List.of(new ElementAttribute(null, id));
-        List<ElementAttribute> statusAttrs = List.of(new ElementAttribute(null, status));
-        List<ElementAttribute> prevAttrs = version == 0
-                ? List.of(new ElementAttribute(null, "unknown"))
-                : List.of(new ElementAttribute(null, "issued"));
-        List<ElementAttribute> versionAttrs = List.of(new ElementAttribute(null, Long.toString(version)));
-        List<ElementAttribute> issuerAttrs = List.of(new ElementAttribute(null, issuerId));
+        List<String> prevAttrs = version == 0 ? List.of("unknown") : List.of("issued");
         List<nostr.event.BaseTag> tags = new ArrayList<>();
-        tags.add(new GenericTag("d", dAttrs));
-        tags.add(new GenericTag("status", statusAttrs));
+        tags.add(new GenericTag("d", List.of(id)));
+        tags.add(new GenericTag("status", List.of(status)));
         tags.add(new GenericTag("previous_status", prevAttrs));
-        tags.add(new GenericTag("state_version", versionAttrs));
-        tags.add(new GenericTag("issuer_id", issuerAttrs));
+        tags.add(new GenericTag("state_version", List.of(Long.toString(version))));
+        tags.add(new GenericTag("issuer_id", List.of(issuerId)));
         if ("claimed".equals(status)) {
-            List<ElementAttribute> claimedBy = List.of(new ElementAttribute(null, "npub1recipient"));
-            List<ElementAttribute> claimedAt = List.of(new ElementAttribute(null, Long.toString(createdAt.getEpochSecond())));
-            tags.add(new GenericTag("claimed_by", claimedBy));
-            tags.add(new GenericTag("claimed_at", claimedAt));
+            tags.add(new GenericTag("claimed_by", List.of("npub1recipient")));
+            tags.add(new GenericTag("claimed_at", List.of(Long.toString(createdAt.getEpochSecond()))));
         }
         event.setTags(tags);
         return event;
@@ -139,7 +130,7 @@ class VoucherLedgerHistoryAndSearchTest {
             return events.stream()
                     .filter(evt -> evt.getTags().stream().anyMatch(tag -> tag instanceof GenericTag g
                             && "d".equals(g.getCode())
-                            && g.getAttributes().getFirst().value().equals(voucherId)))
+                            && g.getParams().getFirst().equals(voucherId)))
                     .findFirst()
                     .map(evt -> new RelayEvent(evt, "wss://relay.test"));
         }
@@ -149,7 +140,7 @@ class VoucherLedgerHistoryAndSearchTest {
             return events.stream()
                     .filter(evt -> evt.getTags().stream().anyMatch(tag -> tag instanceof GenericTag g
                             && "d".equals(g.getCode())
-                            && voucherIds.contains(g.getAttributes().getFirst().value())))
+                            && voucherIds.contains(g.getParams().getFirst())))
                     .map(evt -> new RelayEvent(evt, "wss://relay.test"))
                     .toList();
         }
@@ -164,7 +155,7 @@ class VoucherLedgerHistoryAndSearchTest {
             return events.stream()
                     .filter(evt -> evt.getTags().stream().anyMatch(tag -> tag instanceof GenericTag g
                             && "d".equals(g.getCode())
-                            && g.getAttributes().getFirst().value().equals(voucherId)))
+                            && g.getParams().getFirst().equals(voucherId)))
                     .limit(limit)
                     .map(evt -> new RelayEvent(evt, "wss://relay.test"))
                     .toList();

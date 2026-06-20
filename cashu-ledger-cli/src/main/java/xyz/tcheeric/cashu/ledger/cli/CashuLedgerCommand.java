@@ -10,6 +10,7 @@ import xyz.tcheeric.cashu.ledger.cli.unclaimed.UnclaimedCommand;
 import xyz.tcheeric.cashu.ledger.cli.verify.VerifyCommand;
 import xyz.tcheeric.cashu.ledger.cli.diff.DiffCommand;
 import xyz.tcheeric.cashu.ledger.cli.watch.WatchCommand;
+import xyz.tcheeric.cashu.ledger.cli.trace.TraceCommand;
 import xyz.tcheeric.cashu.ledger.core.relay.CachingRelayConnectionManager;
 import xyz.tcheeric.cashu.ledger.core.relay.NostrRelayConnectionManager;
 import xyz.tcheeric.cashu.ledger.core.relay.RelayConnectionManager;
@@ -35,7 +36,8 @@ import java.util.List;
                 UnclaimedCommand.class,
                 VerifyCommand.class,
                 DiffCommand.class,
-                WatchCommand.class
+                WatchCommand.class,
+                TraceCommand.class
         }
 )
 public class CashuLedgerCommand implements Runnable {

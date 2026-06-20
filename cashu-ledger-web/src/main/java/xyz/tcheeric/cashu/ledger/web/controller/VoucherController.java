@@ -15,6 +15,8 @@ import xyz.tcheeric.cashu.ledger.core.state.HistoryResult;
 import xyz.tcheeric.cashu.ledger.core.state.StatusChange;
 import xyz.tcheeric.cashu.ledger.core.state.VoucherSearchCriteria;
 import xyz.tcheeric.cashu.ledger.core.state.VerificationReport;
+import xyz.tcheeric.cashu.ledger.core.trace.TraceQueryService;
+import xyz.tcheeric.cashu.ledger.web.trace.VoucherInspectionView;
 
 import java.time.Instant;
 import java.util.List;
@@ -24,15 +26,21 @@ import java.util.Optional;
 @RequestMapping("/api/v1/vouchers")
 public class VoucherController {
 
-    private final VoucherLedgerService ledgerService;
+    private static final int TRANSACTION_EVENTS_LIMIT = 100;
 
-    public VoucherController(VoucherLedgerService ledgerService) {
+    private final VoucherLedgerService ledgerService;
+    private final TraceQueryService traceQueryService;
+
+    public VoucherController(VoucherLedgerService ledgerService, TraceQueryService traceQueryService) {
         this.ledgerService = ledgerService;
+        this.traceQueryService = traceQueryService;
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<VoucherNode> inspect(@PathVariable("id") String voucherId) {
+    public ResponseEntity<VoucherInspectionView> inspect(@PathVariable("id") String voucherId) {
         return ledgerService.fetchVoucher(voucherId)
+                .map(voucher -> new VoucherInspectionView(voucher,
+                        traceQueryService.voucherEventSummaries(voucherId, TRANSACTION_EVENTS_LIMIT)))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
