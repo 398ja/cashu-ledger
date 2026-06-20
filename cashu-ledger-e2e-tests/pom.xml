@@ -27,17 +27,10 @@
             <artifactId>nostrdb-jni</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>xyz.tcheeric</groupId>
-            <artifactId>cashu-ledger-cli</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>info.picocli</groupId>
-            <artifactId>picocli</artifactId>
-            <scope>test</scope>
-        </dependency>
+        <!-- cashu-ledger-cli is intentionally NOT a dependency here: it is a shaded uber-jar that
+             bundles unrelocated Spring Boot classes, which pollute this module's classpath and break
+             the web Selenium @SpringBootTest (TraceVisualisationE2ETest). The CLI is exercised by its
+             own module tests. -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
