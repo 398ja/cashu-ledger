@@ -3,6 +3,8 @@ package xyz.tcheeric.cashu.ledger.web.config;
 import java.time.Clock;
 import java.util.HexFormat;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,6 +17,7 @@ import xyz.tcheeric.cashu.ledger.core.trace.EdgeDeriver;
 import xyz.tcheeric.cashu.ledger.core.trace.IndexReconciler;
 import xyz.tcheeric.cashu.ledger.core.trace.IndexedTraceEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.InMemoryRawEventStore;
+import xyz.tcheeric.cashu.ledger.core.trace.NostrDbRawEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.RawEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.SqliteSidecarIndex;
 import xyz.tcheeric.cashu.ledger.core.trace.QuoteStatusService;
@@ -39,14 +42,36 @@ public class TraceWebConfig {
         return new SqliteSidecarIndex(jdbcUrl);
     }
 
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(prefix = "trace.storage", name = "nostrdb-enabled", havingValue = "true")
+    public RawEventStore nostrdbRawEventStore(
+            @Value("${trace.storage.nostrdb-path:${user.home}/.cashu-ledger/trace-ndb}") String path) {
+        return NostrDbRawEventStore.open(java.nio.file.Path.of(path));
+    }
+
     @Bean
-    public RawEventStore traceRawEventStore() {
+    @ConditionalOnMissingBean(RawEventStore.class)
+    public RawEventStore inMemoryRawEventStore() {
         return new InMemoryRawEventStore();
     }
 
     @Bean
     public IndexedTraceEventStore traceEventStore(RawEventStore rawEventStore, SqliteSidecarIndex index) {
         return new IndexedTraceEventStore(rawEventStore, index);
+    }
+
+    /**
+     * On startup, rebuild the (possibly in-memory) sidecar from the durable nostrdb store so the
+     * index reflects the system of record after a restart (design §5.4 rebuild, T030).
+     */
+    @Bean
+    public org.springframework.boot.ApplicationRunner traceSidecarRebuild(
+            RawEventStore rawEventStore, SqliteSidecarIndex index) {
+        return args -> {
+            if (rawEventStore instanceof NostrDbRawEventStore nostrdb && index.count() < nostrdb.count()) {
+                nostrdb.reindex(index);
+            }
+        };
     }
 
     @Bean
