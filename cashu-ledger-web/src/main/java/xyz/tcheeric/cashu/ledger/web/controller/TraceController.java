@@ -18,6 +18,8 @@ import xyz.tcheeric.cashu.ledger.core.trace.EventPage;
 import xyz.tcheeric.cashu.ledger.core.trace.ProofCandidate;
 import xyz.tcheeric.cashu.ledger.core.trace.ProofHistory;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceQueryService;
+import xyz.tcheeric.cashu.ledger.core.trace.VisualisationGraph;
+import xyz.tcheeric.cashu.ledger.core.trace.VisualisationService;
 import xyz.tcheeric.cashu.ledger.core.trace.WalkResult;
 import xyz.tcheeric.cashu.ledger.core.trace.WalkService;
 import xyz.tcheeric.cashu.ledger.trace.core.EventActivity;
@@ -26,9 +28,13 @@ import xyz.tcheeric.cashu.ledger.trace.core.OperationKind;
 import xyz.tcheeric.cashu.ledger.trace.core.StoredEvent;
 import xyz.tcheeric.cashu.ledger.trace.core.TraceEventQuery;
 import xyz.tcheeric.cashu.ledger.trace.core.TraceEventStore;
+import xyz.tcheeric.cashu.ledger.trace.core.TransactionEvent;
+import xyz.tcheeric.cashu.ledger.web.config.WebLedgerProperties;
 import xyz.tcheeric.cashu.ledger.web.security.TracePrincipal;
 import xyz.tcheeric.cashu.ledger.web.trace.EventPageView;
 import xyz.tcheeric.cashu.ledger.web.trace.EventView;
+import xyz.tcheeric.cashu.ledger.web.trace.RelaysView;
+import xyz.tcheeric.cashu.ledger.web.trace.StatsView;
 import xyz.tcheeric.cashu.ledger.web.trace.TraceResponseMapper;
 
 /**
@@ -47,13 +53,19 @@ public class TraceController {
     private final TraceEventStore store;
     private final TraceResponseMapper mapper;
     private final WalkService walkService;
+    private final VisualisationService visualisationService;
+    private final WebLedgerProperties ledgerProperties;
 
     public TraceController(TraceQueryService queryService, TraceEventStore store,
-                          TraceResponseMapper mapper, WalkService walkService) {
+                          TraceResponseMapper mapper, WalkService walkService,
+                          VisualisationService visualisationService,
+                          WebLedgerProperties ledgerProperties) {
         this.queryService = queryService;
         this.store = store;
         this.mapper = mapper;
         this.walkService = walkService;
+        this.visualisationService = visualisationService;
+        this.ledgerProperties = ledgerProperties;
     }
 
     @GetMapping("/events")
@@ -199,11 +211,71 @@ public class TraceController {
         return pageResponse(principal, page, "/issuers/" + issuerId + "/events", issuerId);
     }
 
-    @GetMapping("/stats")
-    public ResponseEntity<IndexStatus> stats(HttpServletRequest request) {
+    @GetMapping("/visualisation")
+    public ResponseEntity<VisualisationGraph> visualisation(
+            HttpServletRequest request,
+            @RequestParam(name = "eventId", required = false) String eventId,
+            @RequestParam(name = "y", required = false) String y,
+            @RequestParam(name = "mintUrl", required = false) String mintUrl,
+            @RequestParam(name = "keysetId", required = false) String keysetId,
+            @RequestParam(name = "direction", required = false, defaultValue = "both") String direction,
+            @RequestParam(name = "depth", required = false, defaultValue = "10") int depth,
+            @RequestParam(name = "limit", required = false, defaultValue = "1000") int limit) {
+
         TracePrincipal principal = principal(request);
+        WalkService.Direction dir = walkDirection(direction);
+        WalkResult walk = anchoredWalk(eventId, y, mintUrl, keysetId, dir, depth, limit);
+        VisualisationGraph graph = visualisationService.fromWalk(walk);
+        int nodeCount = graph.mints().stream().mapToInt(m -> m.nodes().size()).sum();
+        audit(principal, "/visualisation", eventId != null ? eventId : y, nodeCount, false);
+        return noStore().body(graph);
+    }
+
+    @GetMapping("/stats")
+    public ResponseEntity<StatsView> stats(HttpServletRequest request) {
+        TracePrincipal principal = principal(request);
+        IndexStatus status = store.getIndexStatus();
+        StatsView view = new StatsView(
+                status.available(), status.rebuilding(), status.indexedEventCount(),
+                status.latestTransitionAt().map(Instant::toString).orElse(null),
+                TransactionEvent.CURRENT_SCHEMA_VERSION);
         audit(principal, "/stats", null, 1, false);
-        return ResponseEntity.ok(store.getIndexStatus());
+        return ResponseEntity.ok(view);
+    }
+
+    @GetMapping("/relays")
+    public ResponseEntity<RelaysView> relays(HttpServletRequest request) {
+        TracePrincipal principal = principal(request);
+        RelaysView view = new RelaysView(
+                ledgerProperties.getRelays(),
+                TransactionEvent.CURRENT_SCHEMA_VERSION,
+                List.of(TransactionEvent.CURRENT_SCHEMA_VERSION),
+                List.of());
+        audit(principal, "/relays", null, ledgerProperties.getRelays().size(), false);
+        return ResponseEntity.ok(view);
+    }
+
+    private WalkResult anchoredWalk(String eventId, String y, String mintUrl, String keysetId,
+                                    WalkService.Direction dir, int depth, int limit) {
+        if (eventId != null) {
+            return walkService.walkFromEvent(eventId, dir, depth, limit);
+        }
+        if (y == null) {
+            return new WalkResult(dir.name().toLowerCase(), depth,
+                    List.of(), List.of(), false, Optional.empty(), 0);
+        }
+        ProofCandidate target;
+        if (mintUrl != null && keysetId != null) {
+            target = new ProofCandidate(mintUrl, keysetId);
+        } else {
+            List<ProofCandidate> candidates = matchingCandidates(y, mintUrl);
+            if (candidates.size() != 1) {
+                return new WalkResult(dir.name().toLowerCase(), depth,
+                        List.of(), List.of(), false, Optional.empty(), 0);
+            }
+            target = candidates.get(0);
+        }
+        return walkService.walkFromProof(target.mintUrl(), target.keysetId(), y, dir, depth, limit);
     }
 
     private ResponseEntity<EventView> single(TracePrincipal principal,

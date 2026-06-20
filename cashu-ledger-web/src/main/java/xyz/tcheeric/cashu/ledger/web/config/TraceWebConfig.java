@@ -11,6 +11,7 @@ import xyz.tcheeric.cashu.ledger.core.trace.InMemoryRawEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.RawEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.SqliteSidecarIndex;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceQueryService;
+import xyz.tcheeric.cashu.ledger.core.trace.VisualisationService;
 import xyz.tcheeric.cashu.ledger.core.trace.WalkService;
 import xyz.tcheeric.cashu.ledger.trace.core.TraceEventStore;
 
@@ -53,5 +54,10 @@ public class TraceWebConfig {
     @Bean
     public WalkService traceWalkService(TraceEventStore store, EdgeDeriver edgeDeriver) {
         return new WalkService(store, edgeDeriver);
+    }
+
+    @Bean
+    public VisualisationService traceVisualisationService() {
+        return new VisualisationService();
     }
 }
