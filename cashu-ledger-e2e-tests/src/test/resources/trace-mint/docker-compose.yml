@@ -1,0 +1,133 @@
+# Minimal real cashu-mint stack for the trace capture E2E (T039), distilled from the live
+# staging docker-compose.staging.yml. Provides a real mint (real keysets, Lightning quotes
+# auto-settled by phoenixd-mock, quotes persisted by payment-adapter-rest) plus a strfry relay
+# for the trace ledger to consume. Images are the current registry set; pull_policy left default
+# so Testcontainers/compose can fetch them once and cache.
+services:
+  cashu-vault-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: cashu_vault
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cashu_vault"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  payment-adapter-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: payment_gateway
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d payment_gateway"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  cashu-vault-jpa:
+    image: docker.398ja.xyz/cashu-vault-jpa:latest
+    environment:
+      SERVER_PORT: "3333"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://cashu-vault-db:5432/cashu_vault
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.PostgreSQLDialect
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: org.hibernate.dialect.PostgreSQLDialect
+    depends_on:
+      cashu-vault-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3333/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  vault-seed:
+    image: postgres:16
+    volumes:
+      - ./config/seed-vault.sql:/seed-vault.sql:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["until pg_isready -h cashu-vault-db -U postgres; do sleep 1; done && PGPASSWORD=postgres psql -h cashu-vault-db -U postgres -d cashu_vault -f /seed-vault.sql && echo 'Vault seeded'"]
+    depends_on:
+      cashu-vault-jpa:
+        condition: service_healthy
+
+  payment-adapter-rest:
+    image: docker.398ja.xyz/payment-adapter-rest:latest
+    environment:
+      SERVER_PORT: "8080"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://payment-adapter-db:5432/payment_gateway
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      GATEWAY_WALLET_ENABLED: "true"
+      GATEWAY_WALLET_MINT_URL: http://cashu-mint-rest:7777
+      GATEWAY_WALLET_DATABASE_URL: jdbc:postgresql://payment-adapter-db:5432/payment_gateway
+      GATEWAY_WALLET_DATABASE_USERNAME: postgres
+      GATEWAY_WALLET_DATABASE_PASSWORD: postgres
+      GATEWAY_WALLET_VOUCHER_FIXED_BACKING_SATS: "1"
+      GATEWAY_WALLET_VOUCHER_MINIMAL_BACKING_SATS: "10"
+      GATEWAY_WALLET_VOUCHER_SATS_PER_MINOR_UNIT: "1"
+      GATEWAY_WALLET_VOUCHER_PLATFORM_FEE_RATE: "0.025"
+    depends_on:
+      payment-adapter-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+
+  phoenixd-mock:
+    image: docker.398ja.xyz/phoenixd-mock:latest
+    pull_policy: missing
+    environment:
+      SERVER_PORT: "9740"
+      PHOENIXD_AUTOPAY_ENABLED: "true"
+      PHOENIXD_AUTO_SETTLE_DELAY_SECONDS: "2"
+      PHOENIXD_WEBHOOK_BASE_URL: http://payment-adapter-rest:8080
+
+  cashu-mint-rest:
+    image: docker.398ja.xyz/cashu-mint-rest:latest
+    environment:
+      SERVER_PORT: "7777"
+      CASHU_VAULT_BASE_URL: http://cashu-vault-jpa:3333
+      VAULT_BASE_URL: http://cashu-vault-jpa:3333
+      CASHU_GATEWAY_BASE_URL: http://payment-adapter-rest:8080
+      GATEWAY_API_BASE_URL: http://payment-adapter-rest:8080
+      PHOENIXD_BASE_URL: http://phoenixd-mock:9740
+      MINT_PRELOAD_ENABLED: "true"
+      MINT_PRELOAD_JSON_INPUT: file:/app/config/preload-test-data.json
+      MINT_WEBHOOK_SECRET: e2e-test-webhook-secret
+    volumes:
+      - ./config/preload-test-data.json:/app/config/preload-test-data.json:ro
+    ports:
+      - "7777"
+    depends_on:
+      cashu-vault-jpa:
+        condition: service_healthy
+      payment-adapter-rest:
+        condition: service_healthy
+      vault-seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7777/v1/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  nostr-relay:
+    image: dockurr/strfry:latest
+    command: ["sh", "-c", "sed -i 's/^[[:space:]]*nofiles[[:space:]]*=.*/    nofiles = 0/' /etc/strfry.conf.default && exec /app/strfry.sh"]
+    tmpfs:
+      - /app/strfry-db
+    ports:
+      - "7777"
