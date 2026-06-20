@@ -11,7 +11,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import xyz.tcheeric.cashu.ledger.core.trace.ActivityCache;
+import xyz.tcheeric.cashu.ledger.core.trace.QuoteStatusService;
 import xyz.tcheeric.cashu.ledger.core.trace.ProducerAttestationConfig;
 import xyz.tcheeric.cashu.ledger.core.trace.SqliteSidecarIndex;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceEventMapper;
@@ -34,9 +36,15 @@ import xyz.tcheeric.cashu.ledger.web.trace.TraceStreamBroadcaster;
  * notification over SSE.
  */
 @Configuration
+@EnableScheduling
 @EnableConfigurationProperties(TraceIngestProperties.class)
 @ConditionalOnProperty(prefix = "trace.ingest", name = "enabled", havingValue = "true")
 public class TraceIngestConfig {
+
+    @Bean
+    public QuoteExpirySweeper quoteExpirySweeper(QuoteStatusService quoteStatusService) {
+        return new QuoteExpirySweeper(quoteStatusService);
+    }
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TraceIngestConfig.class);
 

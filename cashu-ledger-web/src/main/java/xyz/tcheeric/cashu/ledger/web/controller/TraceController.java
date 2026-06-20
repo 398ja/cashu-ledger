@@ -21,6 +21,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.ObjectProvider;
+import xyz.tcheeric.cashu.ledger.core.trace.QuoteStatusService;
+import xyz.tcheeric.cashu.ledger.core.trace.QuoteStatusView;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceIngestService;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceQueryService;
 import xyz.tcheeric.cashu.ledger.core.trace.VisualisationGraph;
@@ -65,6 +67,7 @@ public class TraceController {
     private final TraceAccessAuditSink auditSink;
     private final ObjectProvider<TraceIngestService> ingestServiceProvider;
     private final MeterRegistry meterRegistry;
+    private final QuoteStatusService quoteStatusService;
 
     public TraceController(TraceQueryService queryService, TraceEventStore store,
                           TraceResponseMapper mapper, WalkService walkService,
@@ -72,7 +75,8 @@ public class TraceController {
                           WebLedgerProperties ledgerProperties,
                           TraceAccessAuditSink auditSink,
                           ObjectProvider<TraceIngestService> ingestServiceProvider,
-                          MeterRegistry meterRegistry) {
+                          MeterRegistry meterRegistry,
+                          QuoteStatusService quoteStatusService) {
         this.queryService = queryService;
         this.store = store;
         this.mapper = mapper;
@@ -82,6 +86,7 @@ public class TraceController {
         this.auditSink = auditSink;
         this.ingestServiceProvider = ingestServiceProvider;
         this.meterRegistry = meterRegistry;
+        this.quoteStatusService = quoteStatusService;
     }
 
     @GetMapping("/events")
@@ -248,6 +253,32 @@ public class TraceController {
         int nodeCount = graph.mints().stream().mapToInt(m -> m.nodes().size()).sum();
         audit(principal, "/visualisation", eventId != null ? eventId : y, nodeCount, false);
         return noStore().body(graph);
+    }
+
+    @GetMapping("/quotes/{quoteId}/status")
+    public ResponseEntity<QuoteStatusView> quoteStatus(
+            HttpServletRequest request,
+            @PathVariable("quoteId") String quoteId,
+            @RequestParam(name = "mintUrl") String mintUrl) {
+        TracePrincipal principal = principal(request);
+        Optional<QuoteStatusView> status = quoteStatusService.status(mintUrl, quoteId);
+        audit(principal, "/quotes/" + quoteId + "/status", quoteId, status.isPresent() ? 1 : 0, false);
+        return status.map(view -> noStore().body(view))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/quotes/{quoteId}/events")
+    public ResponseEntity<EventPageView> quoteEvents(
+            HttpServletRequest request,
+            @PathVariable("quoteId") String quoteId,
+            @RequestParam(name = "mintUrl") String mintUrl,
+            @RequestParam(name = "activity", required = false) String activity,
+            @RequestParam(name = "limit", required = false) Integer limit,
+            @RequestParam(name = "cursor", required = false) String cursor) {
+        TracePrincipal principal = principal(request);
+        EventPage page = queryService.quoteEvents(mintUrl, quoteId, activityFilter(activity),
+                pageLimit(limit), Optional.ofNullable(cursor));
+        return pageResponse(principal, page, "/quotes/" + quoteId + "/events", quoteId);
     }
 
     @GetMapping("/stats")

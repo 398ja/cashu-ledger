@@ -89,6 +89,14 @@ public final class TraceQueryService {
                 e.mintUrl(), e.transitionAt(), activity, reason);
     }
 
+    /** Cursor-paginated events tagged with a quote, keyed on the composite {@code mintUrl::quoteId}. */
+    public EventPage quoteEvents(String mintUrl, String quoteId, Optional<EventActivity> activity,
+                                 int limit, Optional<String> cursor) {
+        TraceEventQuery.Builder b = listingBuilder(activity, limit, cursor)
+                .quoteId(mintUrl + "::" + quoteId);
+        return listEvents(b.build());
+    }
+
     /** Cursor-paginated events attributed to a given issuer pubkey, newest first. */
     public EventPage findByIssuerPubkey(String issuerPubkey, Optional<EventActivity> activity,
                                         int limit, Optional<String> cursor) {

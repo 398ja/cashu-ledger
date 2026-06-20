@@ -1,5 +1,6 @@
 package xyz.tcheeric.cashu.ledger.web.config;
 
+import java.time.Clock;
 import java.util.HexFormat;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -14,6 +15,7 @@ import xyz.tcheeric.cashu.ledger.core.trace.IndexedTraceEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.InMemoryRawEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.RawEventStore;
 import xyz.tcheeric.cashu.ledger.core.trace.SqliteSidecarIndex;
+import xyz.tcheeric.cashu.ledger.core.trace.QuoteStatusService;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceQueryService;
 import xyz.tcheeric.cashu.ledger.core.trace.VisualisationService;
 import xyz.tcheeric.cashu.ledger.core.trace.WalkService;
@@ -74,5 +76,10 @@ public class TraceWebConfig {
     @Bean
     public ActivityCache traceActivityCache(SqliteSidecarIndex index) {
         return new ActivityCache(index);
+    }
+
+    @Bean
+    public QuoteStatusService traceQuoteStatusService(TraceEventStore store, SqliteSidecarIndex index) {
+        return new QuoteStatusService(store, index, Clock.systemUTC());
     }
 }

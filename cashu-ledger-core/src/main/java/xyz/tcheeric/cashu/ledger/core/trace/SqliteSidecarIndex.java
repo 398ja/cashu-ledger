@@ -65,7 +65,8 @@ public final class SqliteSidecarIndex implements AutoCloseable {
                       activity        TEXT NOT NULL DEFAULT 'active',
                       activity_reason TEXT,
                       activity_changed_at INTEGER,
-                      issuer_backfilled INTEGER NOT NULL DEFAULT 0
+                      issuer_backfilled INTEGER NOT NULL DEFAULT 0,
+                      quote_expires_at_s INTEGER
                     )""");
             st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS proof_ref (
@@ -84,6 +85,7 @@ public final class SqliteSidecarIndex implements AutoCloseable {
             st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_idx_issuer_id ON events_index (issuer_id, transition_at_ms)");
             st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_idx_issuer_pk ON events_index (issuer_pubkey, transition_at_ms)");
             st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_idx_quote ON events_index (quote_id)");
+            st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_idx_quote_exp ON events_index (quote_expires_at_s, mint_url)");
             st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_idx_bundle ON events_index (bundle_id)");
             st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_idx_transfer ON events_index (transfer_id, transition_at_ms)");
             st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_idx_op ON events_index (operation_id)");
@@ -131,8 +133,9 @@ public final class SqliteSidecarIndex implements AutoCloseable {
             try (PreparedStatement ps = connection.prepareStatement(
                     "INSERT OR IGNORE INTO events_index (event_id, operation_id, op, mint_url, unit, "
                             + "transition_at_ms, created_at_s, producer_pubkey, initiator_pubkey, voucher_ref, "
-                            + "issuer_id, issuer_pubkey, quote_id, bundle_id, transfer_id, activity, activity_reason) "
-                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
+                            + "issuer_id, issuer_pubkey, quote_id, bundle_id, transfer_id, activity, activity_reason, "
+                            + "quote_expires_at_s) "
+                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")) {
                 ps.setString(1, eventId);
                 ps.setString(2, e.operationId());
                 ps.setString(3, e.kind().wireValue());
@@ -150,6 +153,14 @@ public final class SqliteSidecarIndex implements AutoCloseable {
                 ps.setString(15, e.transferId().orElse(null));
                 ps.setString(16, terminal ? "terminal" : "active");
                 ps.setString(17, terminal ? "terminal_kind" : null);
+                Long quoteExpiresAtS = e.kind().isQuoteRequest()
+                        ? e.lightning().flatMap(l -> l.expiresAt()).map(java.time.Instant::getEpochSecond).orElse(null)
+                        : null;
+                if (quoteExpiresAtS == null) {
+                    ps.setNull(18, java.sql.Types.INTEGER);
+                } else {
+                    ps.setLong(18, quoteExpiresAtS);
+                }
                 if (ps.executeUpdate() == 0) {
                     return false; // already indexed
                 }
@@ -552,6 +563,30 @@ public final class SqliteSidecarIndex implements AutoCloseable {
             }
         } catch (SQLException ex) {
             throw new TraceStorageException("Failed to query prune candidates", ex);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Open quote-request events whose expiry has passed without settlement (for the sweep). */
+    public List<String> expiredOpenQuotes(long nowS, int limit) {
+        lock.lock();
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT event_id FROM events_index WHERE quote_expires_at_s IS NOT NULL "
+                        + "AND quote_expires_at_s < ? AND activity != 'terminal' "
+                        + "AND op IN ('mint_quote_requested','melt_quote_requested') "
+                        + "ORDER BY quote_expires_at_s ASC LIMIT ?")) {
+            ps.setLong(1, nowS);
+            ps.setInt(2, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<String> ids = new ArrayList<>();
+                while (rs.next()) {
+                    ids.add(rs.getString(1));
+                }
+                return ids;
+            }
+        } catch (SQLException ex) {
+            throw new TraceStorageException("Failed to query expired quotes", ex);
         } finally {
             lock.unlock();
         }
