@@ -7,7 +7,7 @@
     <parent>
         <groupId>xyz.tcheeric</groupId>
         <artifactId>cashu-ledger</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.0</version>
     </parent>
 
     <artifactId>cashu-ledger-core</artifactId>
@@ -16,10 +16,10 @@
     <description>Core domain and services for the cashu-ledger CLI</description>
 
     <dependencies>
-        <!-- Nostr relay connectivity -->
+        <!-- Nostr relay connectivity (nostr-java 2.x: core + event + client) -->
         <dependency>
             <groupId>xyz.tcheeric</groupId>
-            <artifactId>nostr-java-client</artifactId>
+            <artifactId>nostr-java-core</artifactId>
         </dependency>
         <dependency>
             <groupId>xyz.tcheeric</groupId>
@@ -27,17 +27,31 @@
         </dependency>
         <dependency>
             <groupId>xyz.tcheeric</groupId>
-            <artifactId>nostr-java-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>xyz.tcheeric</groupId>
-            <artifactId>nostr-java-base</artifactId>
+            <artifactId>nostr-java-client</artifactId>
         </dependency>
 
         <!-- Voucher domain helpers -->
         <dependency>
             <groupId>xyz.tcheeric</groupId>
             <artifactId>cashu-voucher-domain</artifactId>
+        </dependency>
+
+        <!-- Transaction-traceability schema + ports -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-ledger-trace-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- SQLite sidecar index for trace events -->
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <scope>test</scope>
         </dependency>
 
         <!-- Logging -->

@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -34,6 +35,8 @@ public class NostrDbEventStore implements EventStore {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int VOUCHER_KIND = 30078;
     private static final String VOUCHER_D_TAG_PREFIX = "voucher:";
+    /** nostrdb caps query limits at 100,000,000; use it as the "all rows" bound. */
+    private static final int MAX_QUERY_LIMIT = 100_000_000;
 
     private final EventStoreConfig config;
     private final Ndb ndb;
@@ -86,7 +89,7 @@ public class NostrDbEventStore implements EventStore {
         }
 
         try {
-            String eventJson = OBJECT_MAPPER.writeValueAsString(event);
+            String eventJson = OBJECT_MAPPER.writeValueAsString(toSerializableEvent(event));
             ndb.processEvent(eventJson);
 
             if (event.getId() != null && relayUrl != null) {
@@ -97,7 +100,7 @@ public class NostrDbEventStore implements EventStore {
                     event.getId(), event.getKind(), relayUrl);
             return true;
         } catch (JsonProcessingException e) {
-            LOGGER.error("event_serialization_failed event_id={} error={}",
+            LOGGER.warn("event_serialization_failed event_id={} error={}",
                     event.getId(), e.getMessage());
             return false;
         } catch (Exception e) {
@@ -106,6 +109,107 @@ public class NostrDbEventStore implements EventStore {
                     event.getId(), e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Converts a GenericEvent to a simple Map structure for JSON serialization.
+     * This avoids issues with nostr-java's complex object graph and null values.
+     * Validates NIP-01 required fields using nostr-java's built-in validation.
+     */
+    private Map<String, Object> toSerializableEvent(GenericEvent event) {
+        // Validate NIP-01 required fields using nostr-java's built-in validation
+        try {
+            event.validate();
+        } catch (Exception e) {
+            String eventId = event.getId() != null ? event.getId() : "unknown";
+            LOGGER.warn("nip01_validation_failed event_id={} error={}", eventId, e.getMessage());
+        }
+
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("id", event.getId());
+        map.put("pubkey", event.getPubKey() != null ? event.getPubKey().toString() : null);
+        map.put("created_at", event.getCreatedAt());
+        map.put("kind", event.getKind());
+        map.put("content", event.getContent() != null ? event.getContent() : "");
+        map.put("sig", event.getSignature() != null ? event.getSignature().toString() : null);
+
+        // Convert tags to simple string arrays (NIP-01 format)
+        List<List<String>> tags = new ArrayList<>();
+        if (event.getTags() != null) {
+            for (var tag : event.getTags()) {
+                List<String> tagList = serializeTag(tag);
+                if (!tagList.isEmpty()) {
+                    tags.add(tagList);
+                }
+            }
+        }
+        map.put("tags", tags);
+
+        return map;
+    }
+
+    /**
+     * Serializes a BaseTag to a list of strings per NIP-01.
+     * Handles GenericTag and attempts best-effort serialization for other types.
+     */
+    private List<String> serializeTag(nostr.event.BaseTag tag) {
+        List<String> tagList = new ArrayList<>();
+
+        if (tag instanceof nostr.event.tag.GenericTag genericTag) {
+            // GenericTag: use getCode() and getAttributes()
+            String code = genericTag.getCode();
+            if (code != null) {
+                tagList.add(code);
+            }
+            if (genericTag.getParams() != null) {
+                for (String param : genericTag.getParams()) {
+                    if (param != null) {
+                        tagList.add(param);
+                    }
+                }
+            }
+        } else if (tag != null) {
+            // Other BaseTag implementations: attempt reflection-based serialization
+            try {
+                // Try to get code via getCode() method if it exists
+                var getCodeMethod = tag.getClass().getMethod("getCode");
+                Object code = getCodeMethod.invoke(tag);
+                if (code != null) {
+                    tagList.add(code.toString());
+                }
+
+                // Try to get attributes via getAttributes() method if it exists
+                var getAttrsMethod = tag.getClass().getMethod("getAttributes");
+                Object attrs = getAttrsMethod.invoke(tag);
+                if (attrs instanceof List<?> attrList) {
+                    for (Object attr : attrList) {
+                        if (attr != null) {
+                            // Try to get value from attribute
+                            try {
+                                var valueMethod = attr.getClass().getMethod("value");
+                                Object value = valueMethod.invoke(attr);
+                                if (value != null) {
+                                    tagList.add(value.toString());
+                                }
+                            } catch (NoSuchMethodException e) {
+                                tagList.add(attr.toString());
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Fallback: log warning about unhandled tag type
+                LOGGER.warn("tag_serialization_fallback tag_type={} event_id={} using_toString",
+                        tag.getClass().getSimpleName(), "unknown");
+                // Last resort: use toString() which may not be NIP-01 compliant
+                String tagStr = tag.toString();
+                if (tagStr != null && !tagStr.isEmpty()) {
+                    tagList.add(tagStr);
+                }
+            }
+        }
+
+        return tagList;
     }
 
     @Override
@@ -272,10 +376,10 @@ public class NostrDbEventStore implements EventStore {
         try (Transaction txn = ndb.beginTransaction();
              Filter filter = Filter.builder()
                      .kinds(VOUCHER_KIND)
-                     .limit(Integer.MAX_VALUE)
+                     .limit(MAX_QUERY_LIMIT)
                      .build()) {
 
-            List<Note> notes = ndb.queryNotes(txn, filter, Integer.MAX_VALUE);
+            List<Note> notes = ndb.queryNotes(txn, filter, MAX_QUERY_LIMIT);
             long voucherCount = notes.size();
 
             // Estimate database size from directory
@@ -324,11 +428,11 @@ public class NostrDbEventStore implements EventStore {
             for (List<String> tagList : note.tags()) {
                 if (!tagList.isEmpty()) {
                     String tagCode = tagList.get(0);
-                    List<nostr.base.ElementAttribute> attributes = new ArrayList<>();
+                    List<String> params = new ArrayList<>();
                     for (int i = 1; i < tagList.size(); i++) {
-                        attributes.add(new nostr.base.ElementAttribute(null, tagList.get(i)));
+                        params.add(tagList.get(i));
                     }
-                    genericTags.add(new nostr.event.tag.GenericTag(tagCode, attributes));
+                    genericTags.add(new nostr.event.tag.GenericTag(tagCode, params));
                 }
             }
             event.setTags(genericTags);

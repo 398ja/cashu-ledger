@@ -2,6 +2,55 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [0.3.0] - 2026-06-20
+
+### Added
+
+- **Transaction Traceability** — a chain-of-custody DAG over Cashu mint/swap/melt/send/receive operations, published as signed kind-9079 Nostr events and served by an operator-internal read API.
+  - New modules `cashu-ledger-trace-core` (schema, canonical JSON, redaction, invariants) and `cashu-ledger-trace-publisher` (embeddable producer SDK: durable outbox, signer, deterministic operation ids, nostr relay transport, Spring Boot starter, OpenTelemetry, reconciler).
+  - Ledger ingest (opt-in `trace.ingest.enabled`): relay sync engine, voucher-state watcher, validating ingest with producer attestation, dedup/conflict/clock-skew, SQLite sidecar index, activity classification cache, and issuer back-fill.
+  - Read API under `/api/v1/trace` (NIP-98 authenticated, access-shaped): events, operations, proof history, forensic walk, voucher/issuer listings, visualisation graph, stats, relays, SSE stream, and admin redaction-key/access-log/index-status surfaces.
+  - `cashu-ledger trace` CLI: `proof` (client-side Y derivation), `voucher`, `issuer`, `replay` (idempotent backfill), `export --sanitise`.
+  - Web graph explorer (Cytoscape/dagre) with drill-down, privacy banner, and live updates.
+  - Minimal tombstone pruning and a retention engine (age + terminal sub-DAG); Prometheus metrics + Grafana dashboard; OpenAPI spec; schema-evolution four-tier ladder.
+
+### Security
+
+- Trace events are published only to private, authenticated relays; read responses are shaped to the caller's authority so a summary-level caller never receives secret-bearing fields; redaction keys are stored encrypted at rest; sanitised export re-keys secrets under an ephemeral key.
+
+## [0.2.2] - 2026-01-10
+
+### Fixed
+
+- **NIP-01 Compliance** - Improved event validation in NostrDbEventStore using nostr-java's built-in validation
+
+### Changed
+
+- Updated nostrdb-jni dependency from 0.1.0-SNAPSHOT to 0.1.1
+- Updated cashu-voucher dependency from 0.3.7 to 0.5.0
+- Improved container memory configuration for JVM
+
+## [0.2.1] - 2026-01-02
+
+### Fixed
+
+- **Event Serialization** - Convert GenericEvent to serializable map structure to avoid Jackson NPE with nostr-java objects
+- **Web Module Dependency** - Include nostrdb-jni dependency in web module for persistent caching support
+- **Serialization Logging** - Reduce serialization failure log level from ERROR to WARN (recoverable operation)
+- **Resource Management** - Add `@SuppressWarnings("resource")` for intentionally pooled ClientContext connections
+- **CI Test Compatibility** - Skip nostrdb tests in CI environments where LMDB memory allocation fails
+  - Add class-level `@EnabledIf` to prevent `@BeforeEach` from running before condition check
+  - Affects: `NostrDbEventStoreTest`, `StorageIntegrationTest`, `StorageCachingE2ETest`
+- **Docker Port** - Correct health check port from 8080 to 6060 in Dockerfile
+- **Build Configuration** - Add missing lombok version in annotationProcessorPaths
+- **Tag Serialization** - Handle all BaseTag types with reflection fallback, not just GenericTag
+- **JVM Memory Config** - Remove conflicting fixed heap flags (-Xms/-Xmx) in favor of percentage-based sizing for containers
+- **NIP-01 Validation** - Use nostr-java's built-in `event.validate()` for NIP-01 compliance with warning logs
+
+### Changed
+
+- Added Maven wrapper (mvnw) for consistent builds across environments
+
 ## [0.2.0] - 2026-01-02
 
 ### Added

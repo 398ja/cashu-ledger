@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Spec 048 T059 — temporary test-time logback config so the trace producer
++ ingest pipeline logs are visible during the real-producer E2E.
+
+Drops to INFO globally to keep noise down; DEBUG on the spec-048 paths
+(both wallet-lib's WalletTraceProducer and the SDK's
+DefaultTraceabilityPublisher / OutboxDispatcher) so any silent failure
+in the publish chain surfaces in surefire output.
+-->
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="WARN">
+        <appender-ref ref="STDOUT" />
+    </root>
+
+    <!-- Spec 048 paths under audit. -->
+    <logger name="xyz.tcheeric.wallet.core.trace" level="DEBUG" />
+    <logger name="xyz.tcheeric.cashu.ledger.trace" level="DEBUG" />
+    <logger name="xyz.tcheeric.cashu.ledger.core.trace" level="INFO" />
+</configuration>

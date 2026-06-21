@@ -7,7 +7,7 @@
     <parent>
         <groupId>xyz.tcheeric</groupId>
         <artifactId>cashu-ledger</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.0</version>
     </parent>
 
     <artifactId>cashu-ledger-cli</artifactId>
@@ -40,6 +40,20 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- Client-side proof Y derivation (hash_to_curve) so raw secrets stay local -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-lib-crypto</artifactId>
+            <version>${cashu-lib-crypto.version}</version>
+        </dependency>
+
+        <!-- Deterministic backfill operation ids + event signing for the replay tool -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-ledger-trace-publisher</artifactId>
+            <version>${project.version}</version>
         </dependency>
 
         <!-- Testing -->

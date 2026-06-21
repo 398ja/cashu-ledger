@@ -1,6 +1,5 @@
 package xyz.tcheeric.cashu.ledger.core.service;
 
-import nostr.base.ElementAttribute;
 import nostr.base.PublicKey;
 import nostr.event.BaseTag;
 import nostr.event.impl.GenericEvent;
@@ -117,11 +116,7 @@ class VoucherTreeBuilderTest {
     }
 
     private BaseTag tag(String code, String... values) {
-        List<ElementAttribute> attrs = new ArrayList<>();
-        for (String value : values) {
-            attrs.add(new ElementAttribute(null, value));
-        }
-        return new GenericTag(code, attrs);
+        return new GenericTag(code, java.util.Arrays.asList(values));
     }
 
     private static final class StubRelayConnectionManager implements RelayConnectionManager {
@@ -132,7 +127,7 @@ class VoucherTreeBuilderTest {
                 String id = evt.getTags().stream()
                         .filter(tag -> tag instanceof GenericTag g && "d".equals(g.getCode()))
                         .findFirst()
-                        .map(tag -> ((GenericTag) tag).getAttributes().getFirst().value().toString())
+                        .map(tag -> ((GenericTag) tag).getParams().getFirst())
                         .orElseThrow();
                 events.put(id, evt);
             }
@@ -168,9 +163,9 @@ class VoucherTreeBuilderTest {
                 boolean hasParent = evt.getTags().stream().anyMatch(tag ->
                         tag instanceof GenericTag g
                                 && "parent".equals(g.getCode())
-                                && g.getAttributes() != null
-                                && !g.getAttributes().isEmpty()
-                                && parentVoucherId.equals(g.getAttributes().getFirst().value())
+                                && g.getParams() != null
+                                && !g.getParams().isEmpty()
+                                && parentVoucherId.equals(g.getParams().getFirst())
                 );
                 if (hasParent) {
                     found.add(new RelayEvent(evt, "wss://relay.test"));

@@ -7,7 +7,7 @@
     <parent>
         <groupId>xyz.tcheeric</groupId>
         <artifactId>cashu-ledger</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.0</version>
     </parent>
 
     <artifactId>cashu-ledger-e2e-tests</artifactId>
@@ -27,17 +27,10 @@
             <artifactId>nostrdb-jni</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>xyz.tcheeric</groupId>
-            <artifactId>cashu-ledger-cli</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>info.picocli</groupId>
-            <artifactId>picocli</artifactId>
-            <scope>test</scope>
-        </dependency>
+        <!-- cashu-ledger-cli is intentionally NOT a dependency here: it is a shaded uber-jar that
+             bundles unrelocated Spring Boot classes, which pollute this module's classpath and break
+             the web Selenium @SpringBootTest (TraceVisualisationE2ETest). The CLI is exercised by its
+             own module tests. -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -48,5 +41,77 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Browser E2E for the trace visualisation UI (US4 T062) -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-ledger-web</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.seleniumhq.selenium</groupId>
+            <artifactId>selenium-java</artifactId>
+            <version>${selenium.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Real-mint trace-capture E2E (T039): drive a real cashu-mint via Testcontainers,
+             mint/swap/melt real proofs, sign+publish kind-9079 events, ingest, and assert. -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-ledger-trace-publisher</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-wallet-client</artifactId>
+            <version>${cashu-wallet-client.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>cashu-lib-crypto</artifactId>
+            <version>${cashu-lib-crypto.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Spec 048 T059 — drive the E2E test with the REAL wallet-side
+             producer (WalletTraceProducer + ProofRefBuilder) instead of
+             hand-built TransactionEvents. wallet-core-cashu transitively
+             pulls wallet-core-base + cashu-ledger-trace-publisher SDK. -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>wallet-core-cashu</artifactId>
+            <version>${imani-wallet.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Always in the reactor (so IDEs import this module), but the e2e
+                 tests run only with -P e2e-tests (which sets skip.e2e.tests=false). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <skipTests>${skip.e2e.tests}</skipTests>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

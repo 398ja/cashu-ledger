@@ -1,6 +1,5 @@
 package xyz.tcheeric.cashu.ledger.core.mapper;
 
-import nostr.base.ElementAttribute;
 import nostr.base.PublicKey;
 import nostr.event.BaseTag;
 import nostr.event.impl.GenericEvent;
@@ -74,9 +73,6 @@ class VoucherEventMapperTest {
     }
 
     private BaseTag tag(String code, String... values) {
-        List<ElementAttribute> attrs = java.util.Arrays.stream(values)
-                .map(v -> new ElementAttribute(null, v))
-                .toList();
-        return new GenericTag(code, attrs);
+        return new GenericTag(code, java.util.Arrays.asList(values));
     }
 }

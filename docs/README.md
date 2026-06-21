@@ -30,6 +30,7 @@ Task-oriented guides that show you how to solve specific problems.
 |----------|-------------|
 | [Enable Local Caching](how-to/enable-local-caching.md) | Configure nostrdb-jni for persistent event caching |
 | [Deploy with Docker](how-to/docker-deployment.md) | Run cashu-ledger-web in a container |
+| [Operate the Trace Ledger](how-to/operate-trace-ledger.md) | Enable ingest, authorise readers, monitor, and prune the traceability ledger |
 
 ### Reference
 
@@ -41,6 +42,17 @@ Technical descriptions of the system and its components.
 | [REST API](reference/rest-api.md) | Web module REST endpoints |
 | [Voucher Specification](reference/voucher-specification.md) | Voucher state model and Nostr event format |
 | [Configuration](reference/configuration.md) | Configuration properties reference |
+| [Trace API & CLI](reference/trace-api.md) | Traceability REST endpoints and `cashu-ledger trace` commands |
+
+### Design
+
+| Document | Description |
+|----------|-------------|
+| [Cashu Ledger Specification](design/cashu-ledger-specification.md) | Core ledger tool specification |
+| [Client REST API Specification](design/client-rest-api-specification.md) | Authenticated client API for voucher management |
+| [nostrdb Storage Usage](design/nostrdb-storage-usage.md) | Storage layer design with nostrdb |
+| [nostrdb-jni Integration Plan](design/nostrdb-jni-integration-plan.md) | JNI integration plan for nostrdb |
+| [Transaction Traceability Specification](design/transaction-traceability-specification.md) | Chain-of-custody DAG for Cashu mint/swap/melt/send/receive operations |
 
 ### Explanation
 
@@ -51,6 +63,7 @@ Background information and design decisions.
 | [Architecture Overview](explanation/architecture.md) | System design and component interactions |
 | [nostrdb-jni Integration](explanation/nostrdb-integration.md) | Design rationale for the caching layer |
 | [State Machine Design](explanation/state-machine.md) | Voucher lifecycle and state transitions |
+| [Chain of Custody](explanation/chain-of-custody.md) | How traced operations form a navigable DAG, and the design behind it |
 
 ---
 
