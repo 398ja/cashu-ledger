@@ -79,6 +79,16 @@
             <version>${cashu-lib-crypto.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- Spec 048 T059 — drive the E2E test with the REAL wallet-side
+             producer (WalletTraceProducer + ProofRefBuilder) instead of
+             hand-built TransactionEvents. wallet-core-cashu transitively
+             pulls wallet-core-base + cashu-ledger-trace-publisher SDK. -->
+        <dependency>
+            <groupId>xyz.tcheeric</groupId>
+            <artifactId>wallet-core-cashu</artifactId>
+            <version>${imani-wallet.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers</artifactId>
