@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
     <title>Cashu Ledger Web</title>
@@ -42,7 +42,7 @@
 <div class="top">
     <div>
         <h1>Cashu Ledger</h1>
-        <div class="pill">Relay: wss://relay.imani.casa</div>
+        <div class="pill" th:text="'Relay: ' + ${relay}">Relay: wss://relay.imani.casa</div>
     </div>
     <div class="row" style="align-items:center;">
         <button class="hamburger" id="menu-toggle" aria-label="Toggle navigation">☰ Menu</button>
@@ -53,7 +53,7 @@
 <div class="card" style="margin-bottom:16px;">
     <div class="row" style="align-items:center; gap:8px; flex-wrap:wrap;">
         <label for="api-base" style="margin:0;">API Base</label>
-        <input id="api-base" class="api-input" placeholder="/proxy or https://staging.imani.casa/api/v1" aria-label="API base URL">
+        <input id="api-base" class="api-input" placeholder="/proxy or https://<host>/api/v1" aria-label="API base URL">
         <button class="ghost-btn" id="api-save">Save</button>
         <span id="api-status" style="color:var(--muted); font-size:12px;"></span>
     </div>
