@@ -10,6 +10,7 @@ All notable changes to this project are documented here. This project follows Co
   - Returning visits unlock with the password only; an incorrect password is rejected with the stored credential kept.
   - Sessions auto-lock after 15 minutes of inactivity, clearing the in-memory key while keeping the stored credential; logout wipes the stored credential and key and locks any other open tabs.
   - Client-side NIP-19 decoding and NIP-01/BIP-340 signing use the vendored, audited `nostr-tools` bundle; a `node --test` suite covers the crypto envelope and nsec handling and runs under `mvn verify`.
+  - The graph explorer now targets the `/api/v1` trace API by default (decoupled from the voucher `/proxy` base), so searches work without manually changing the API base; still overridable via `data-trace-api-base` or a browser-local setting.
 
 ### Removed
 

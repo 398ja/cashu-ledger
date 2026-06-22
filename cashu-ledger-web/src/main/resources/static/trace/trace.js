@@ -10,7 +10,11 @@
 (function () {
     'use strict';
 
-    const API_KEY = 'cashu-ledger-api-base';
+    // The trace endpoints live under /api/v1/trace (not the voucher /proxy base),
+    // so the graph defaults to /api/v1. A deployment may override via the body's
+    // data-trace-api-base attribute, or a browser via the localStorage key below.
+    const API_BASE_KEY = 'cashu-ledger-trace-api-base';
+    const DEFAULT_TRACE_API_BASE = '/api/v1';
     const TERMINAL_KINDS = new Set(['melt', 'melt_failed', 'mint_failed', 'event_pruned']);
     const KIND_SHAPE = {
         mint: 'round-rectangle', swap: 'ellipse', send: 'diamond', receive: 'diamond',
@@ -22,7 +26,8 @@
 
     const el = (id) => document.getElementById(id);
     const isUnlocked = () => window.cashuSession && window.cashuSession.getState() === 'UNLOCKED';
-    const apiBase = () => localStorage.getItem(API_KEY) || (document.body.dataset.apiBase || '/proxy');
+    const apiBase = () => localStorage.getItem(API_BASE_KEY)
+        || document.body.dataset.traceApiBase || DEFAULT_TRACE_API_BASE;
 
     function apiUrl(path) {
         const base = apiBase().replace(/\/$/, '');
