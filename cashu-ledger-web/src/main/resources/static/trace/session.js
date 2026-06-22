@@ -16,6 +16,7 @@
     const STORAGE_KEY = 'cashu-ledger-nsec';
     const SIGNED_OUT = 'SIGNED_OUT';
     const UNLOCKED = 'UNLOCKED';
+    const IDLE_LOCK_MS = 15 * 60 * 1000;
 
     const core = window.cashuSessionCore;
     const el = (id) => document.getElementById(id);
@@ -23,6 +24,7 @@
     let secretKey = null;
     let pubkey = null;
     let state = SIGNED_OUT;
+    let idleTimer = null;
     const statusListeners = [];
 
     function onStatusChange(callback) {
@@ -62,11 +64,16 @@
         secretKey = key;
         pubkey = core.derivePublicKey(key);
         state = UNLOCKED;
+        resetIdleTimer();
         renderPanel();
         emitStatus();
     }
 
     function clearKey() {
+        if (idleTimer) {
+            clearTimeout(idleTimer);
+            idleTimer = null;
+        }
         if (secretKey) {
             secretKey.fill(0);
         }
@@ -75,6 +82,24 @@
         state = SIGNED_OUT;
         renderPanel();
         emitStatus();
+    }
+
+    // Clears the in-memory key after a period of inactivity while leaving the
+    // stored envelope intact, so the user can unlock again with their password.
+    function autoLock() {
+        if (state === UNLOCKED) {
+            clearKey();
+        }
+    }
+
+    function resetIdleTimer() {
+        if (state !== UNLOCKED) {
+            return;
+        }
+        if (idleTimer) {
+            clearTimeout(idleTimer);
+        }
+        idleTimer = setTimeout(autoLock, IDLE_LOCK_MS);
     }
 
     // Produces the NIP-98 Authorization header for a request, or null when the
@@ -91,6 +116,28 @@
     function logout() {
         localStorage.removeItem(STORAGE_KEY);
         clearKey();
+    }
+
+    // Unlocks a returning session from the stored envelope using the password
+    // only. A wrong password rejects (envelope kept); a corrupted envelope is
+    // reported so the caller can offer to clear it and sign in fresh.
+    async function unlock(password) {
+        const envelope = readEnvelope();
+        if (!envelope || envelope.corrupted || !core.isWellFormedEnvelope(envelope)) {
+            const error = new Error('Your stored credential is unreadable. Clear it and sign in again.');
+            error.corrupted = true;
+            throw error;
+        }
+        if (!password) {
+            throw new Error('Enter your password to unlock.');
+        }
+        let key;
+        try {
+            key = await core.decryptEnvelope(envelope, password);
+        } catch (e) {
+            throw new Error('Incorrect password.');
+        }
+        setUnlocked(key);
     }
 
     // Signs in with a fresh nsec + password: validates input, encrypts the nsec
@@ -124,17 +171,23 @@
             line.textContent = 'Signed in as ' + pubkey.slice(0, 12) + '… '
                 + 'Fields shown depend on your operator access level.';
             line.style.background = 'rgba(34,197,94,0.14)';
+        } else if (hasStoredCredential()) {
+            line.textContent = 'Enter your password to unlock the transaction graph.';
+            line.style.background = 'rgba(234,179,8,0.12)';
         } else {
             line.textContent = 'Sign in with your nsec to view the transaction graph.';
             line.style.background = 'rgba(234,179,8,0.12)';
         }
     }
 
-    // Toggles the auth panel between the signed-out (login form) and signed-in
-    // (logout) views and refreshes the status line.
+    // Selects the auth-panel view: unlocked → logout; locked with a stored
+    // credential → password-only unlock; locked with none → first-time login.
     function renderPanel() {
         setStatusLine();
-        show('trace-login-form', state !== UNLOCKED);
+        const locked = state !== UNLOCKED;
+        const stored = hasStoredCredential();
+        show('trace-login-form', locked && !stored);
+        show('trace-unlock-form', locked && stored);
         show('trace-session-active', state === UNLOCKED);
     }
 
@@ -167,6 +220,42 @@
         }
     }
 
+    function setUnlockError(message) {
+        const node = el('trace-unlock-error');
+        if (node) {
+            node.textContent = message || '';
+            node.style.display = message ? '' : 'none';
+        }
+    }
+
+    async function handleUnlock() {
+        setUnlockError('');
+        const passwordField = el('trace-unlock-password');
+        const button = el('trace-unlock-btn');
+        if (button) {
+            button.disabled = true;
+        }
+        try {
+            await unlock(passwordField.value);
+            passwordField.value = '';
+        } catch (e) {
+            setUnlockError(e.message);
+        } finally {
+            if (button) {
+                button.disabled = false;
+            }
+        }
+    }
+
+    // Discards the stored credential and returns to the first-time login form,
+    // e.g. to use a different nsec or after a corrupted credential.
+    function resetCredential() {
+        localStorage.removeItem(STORAGE_KEY);
+        setUnlockError('');
+        renderPanel();
+        emitStatus();
+    }
+
     function bindControls() {
         const button = el('trace-login-btn');
         if (button) {
@@ -180,10 +269,32 @@
                 }
             });
         }
+        const unlockButton = el('trace-unlock-btn');
+        if (unlockButton) {
+            unlockButton.addEventListener('click', handleUnlock);
+        }
+        const unlockField = el('trace-unlock-password');
+        if (unlockField) {
+            unlockField.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    handleUnlock();
+                }
+            });
+        }
+        const resetButton = el('trace-unlock-reset');
+        if (resetButton) {
+            resetButton.addEventListener('click', resetCredential);
+        }
         const logoutButton = el('trace-logout-btn');
         if (logoutButton) {
             logoutButton.addEventListener('click', logout);
         }
+    }
+
+    function bindActivityTracking() {
+        ['click', 'keydown'].forEach((eventName) => {
+            document.addEventListener(eventName, resetIdleTimer, { passive: true });
+        });
     }
 
     // Keeps tabs consistent: when this credential is removed in another tab
@@ -202,6 +313,7 @@
         }
         bindControls();
         bindCrossTabSync();
+        bindActivityTracking();
         renderPanel();
         emitStatus();
     }
@@ -212,6 +324,7 @@
         onStatusChange: onStatusChange,
         authHeader: authHeader,
         login: login,
+        unlock: unlock,
         logout: logout
     };
 

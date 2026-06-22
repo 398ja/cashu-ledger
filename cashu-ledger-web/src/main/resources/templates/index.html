@@ -156,6 +156,19 @@
                     <div id="trace-login-error" style="display:none; margin-top:6px; color:#ef4444;
                          font-size:13px;"></div>
                 </div>
+                <div id="trace-unlock-form" style="display:none; margin-top:8px;">
+                    <div class="row" style="gap:8px; flex-wrap:wrap; align-items:flex-end;">
+                        <div style="min-width:200px;">
+                            <label for="trace-unlock-password">Password</label>
+                            <input id="trace-unlock-password" type="password" autocomplete="current-password"
+                                   placeholder="unlock your stored nsec" aria-label="Unlock password">
+                        </div>
+                        <button class="primary" id="trace-unlock-btn">Unlock</button>
+                        <button class="ghost-btn" id="trace-unlock-reset">Use a different nsec</button>
+                    </div>
+                    <div id="trace-unlock-error" style="display:none; margin-top:6px; color:#ef4444;
+                         font-size:13px;"></div>
+                </div>
                 <div id="trace-session-active" style="display:none; margin-top:8px;">
                     <button class="ghost-btn" id="trace-logout-btn">Log out</button>
                 </div>

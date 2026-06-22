@@ -68,3 +68,24 @@ test('a malformed nsec is rejected', () => {
     assert.equal(core.isValidNsec(''), false);
     assert.throws(() => core.decodeNsec('not-an-nsec'));
 });
+
+/** Decrypting with the wrong password fails (AES-GCM authentication), never yielding a key. */
+test('decryption with the wrong password is rejected', async () => {
+    // Arrange
+    const envelope = await core.encryptSecretKey(randomSecretKey(), 'right-password');
+
+    // Act / Then
+    await assert.rejects(core.decryptEnvelope(envelope, 'wrong-password'));
+});
+
+/** A tampered ciphertext fails decryption even with the correct password. */
+test('a tampered envelope is rejected', async () => {
+    // Arrange: flip the last two ciphertext chars, keeping a valid-looking envelope
+    const envelope = await core.encryptSecretKey(randomSecretKey(), 'pw');
+    const tampered = Object.assign({}, envelope, {
+        ciphertext: envelope.ciphertext.slice(0, -2) + (envelope.ciphertext.endsWith('AA') ? 'BB' : 'AA')
+    });
+
+    // Act / Then
+    await assert.rejects(core.decryptEnvelope(tampered, 'pw'));
+});
