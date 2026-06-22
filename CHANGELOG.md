@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
-## [Unreleased]
+## [0.3.1] - 2026-06-22
 
 ### Fixed
 
