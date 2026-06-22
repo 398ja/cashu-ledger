@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [0.4.0] - 2026-06-22
+
+### Added
+
+- **nsec login for the web Transaction Graph** — sign in with your `nsec1…` private key and a password instead of a browser extension. The nsec is encrypted in the browser (WebCrypto PBKDF2-SHA256 + AES-256-GCM) with the password and persisted locally; while unlocked, the in-memory key signs the NIP-98 headers the graph requests require.
+  - Returning visits unlock with the password only; an incorrect password is rejected with the stored credential kept.
+  - Sessions auto-lock after 15 minutes of inactivity, clearing the in-memory key while keeping the stored credential; logout wipes the stored credential and key and locks any other open tabs.
+  - Client-side NIP-19 decoding and NIP-01/BIP-340 signing use the vendored, audited `nostr-tools` bundle; a `node --test` suite covers the crypto envelope and nsec handling and runs under `mvn verify`.
+
+### Removed
+
+- **NIP-07 browser-extension sign-in** for the Transaction Graph — replaced entirely by nsec login. The web UI no longer depends on a `window.nostr` extension being present.
+
 ## [0.3.1] - 2026-06-22
 
 ### Fixed
