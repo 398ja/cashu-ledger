@@ -2,9 +2,9 @@
  * Transaction-graph explorer (design §5.5 / §5.3.2). Renders the secret-free
  * /api/v1/trace/visualisation payload with Cytoscape + dagre, anchored on an event or
  * proof, and drills down into a node via /api/v1/trace/events/{id}. All trace endpoints
- * are NIP-98 gated; this module signs requests with a NIP-07 browser extension
- * (window.nostr) when present and degrades gracefully — with no signer the graph cannot
- * load and the banner explains why. The drill-down only ever shows what the server
+ * are NIP-98 gated; this module obtains the signed Authorization header from the nsec
+ * login session (window.cashuSession). When the session is locked the graph cannot load
+ * and the user is prompted to sign in. The drill-down only ever shows what the server
  * returns, so secret fields appear solely for an operator the server authorises (SC-009).
  */
 (function () {
@@ -19,9 +19,9 @@
     };
 
     let cy = null;
-    let authPubkey = null;
 
     const el = (id) => document.getElementById(id);
+    const isUnlocked = () => window.cashuSession && window.cashuSession.getState() === 'UNLOCKED';
     const apiBase = () => localStorage.getItem(API_KEY) || (document.body.dataset.apiBase || '/proxy');
 
     function apiUrl(path) {
@@ -33,55 +33,13 @@
         return new URL(apiUrl(path), window.location.href).href;
     }
 
-    function base64url(text) {
-        return btoa(text).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    }
-
-    // Builds a NIP-98 (kind 27235) Authorization header for a request, or null when no
-    // browser signer is available. The signed event's "u" tag must equal the request URL.
-    async function authHeader(method, url) {
-        if (!window.nostr || typeof window.nostr.signEvent !== 'function') {
-            return null;
-        }
-        const unsigned = {
-            kind: 27235,
-            created_at: Math.floor(Date.now() / 1000),
-            tags: [['u', url], ['method', method]],
-            content: ''
-        };
-        const signed = await window.nostr.signEvent(unsigned);
-        return 'Nostr ' + base64url(JSON.stringify(signed));
-    }
-
-    async function traceFetch(path) {
+    // Obtains the NIP-98 Authorization header from the nsec login session, or null
+    // when the session is locked. The signed event's "u" tag equals the request URL.
+    function traceFetch(path) {
         const url = absoluteUrl(path);
-        const header = await authHeader('GET', url);
+        const header = window.cashuSession ? window.cashuSession.authHeader('GET', url) : null;
         const headers = header ? { Authorization: header } : {};
         return fetch(apiUrl(path), { headers, cache: 'no-store' });
-    }
-
-    function setBanner(text, tone) {
-        const banner = el('trace-auth-banner');
-        if (!banner) return;
-        banner.textContent = text;
-        const colours = { ok: 'rgba(34,197,94,0.14)', warn: 'rgba(234,179,8,0.12)', err: 'rgba(239,68,68,0.14)' };
-        banner.style.background = colours[tone] || colours.warn;
-    }
-
-    async function detectAuthority() {
-        if (window.nostr && typeof window.nostr.getPublicKey === 'function') {
-            try {
-                authPubkey = await window.nostr.getPublicKey();
-                setBanner('Authenticated via Nostr extension (' + authPubkey.slice(0, 12) + '…). '
-                    + 'Fields shown depend on your operator access level.', 'ok');
-                return;
-            } catch (e) {
-                setBanner('Nostr extension present but authorisation was declined. The graph is gated.', 'err');
-                return;
-            }
-        }
-        setBanner('No Nostr (NIP-07) extension found. Operator authentication is required to view the '
-            + 'trace graph; install a signer and grant access.', 'warn');
     }
 
     function mintHue(mintUrl) {
@@ -183,6 +141,10 @@
     }
 
     async function render() {
+        if (!isUnlocked()) {
+            el('trace-detail').innerHTML = '<div style="color:#eab308;">Sign in with your nsec to view the graph.</div>';
+            return;
+        }
         const type = el('trace-anchor-type').value;
         const anchor = el('trace-anchor-id').value.trim();
         if (!anchor) return;
@@ -206,7 +168,12 @@
             return;
         }
         if (res.status === 401) {
-            detail.innerHTML = '<div style="color:#ef4444;">Unauthorised. Operator authentication required.</div>';
+            detail.innerHTML = '<div style="color:#ef4444;">Authentication failed. Sign in again with your nsec.</div>';
+            return;
+        }
+        if (res.status === 403) {
+            detail.innerHTML = '<div style="color:#ef4444;">Your key is not authorised to view this trace data. '
+                + 'Ask an operator to grant your public key access.</div>';
             return;
         }
         if (!res.ok) {
@@ -245,6 +212,10 @@
 
     async function showDetail(eventId) {
         const detail = el('trace-detail');
+        if (!isUnlocked()) {
+            detail.innerHTML = '<div style="color:#eab308;">Sign in with your nsec to inspect events.</div>';
+            return;
+        }
         detail.innerHTML = '<div style="color:var(--muted);font-size:13px;">Loading event…</div>';
         let res;
         try {
@@ -312,7 +283,14 @@
     document.addEventListener('DOMContentLoaded', () => {
         if (!el('trace-render-btn')) return;
         bindControls();
-        detectAuthority();
+        if (window.cashuSession) {
+            window.cashuSession.onStatusChange(() => {
+                if (!isUnlocked() && cy) {
+                    cy.destroy();
+                    cy = null;
+                }
+            });
+        }
         connectStream();
     });
 })();
