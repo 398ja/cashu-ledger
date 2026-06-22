@@ -181,6 +181,7 @@
             return;
         }
         const graph = await res.json();
+        if (!isUnlocked()) return;
         const opts = {
             view: el('trace-view').value,
             activity: el('trace-activity').value,
@@ -229,6 +230,7 @@
             return;
         }
         const event = await res.json();
+        if (!isUnlocked()) return;
         const mode = escapeHtml(event.returnedPrivacyMode || 'minimal');
         const kind = escapeHtml(event.kind || 'event');
         const anchorBtn = '<button class="ghost-btn" id="trace-anchor-here">Anchor here</button>';

@@ -86,6 +86,13 @@
         return core.buildAuthorizationHeader(method, url, secretKey);
     }
 
+    // Signs out: removes the stored envelope and clears the in-memory key, so no
+    // recoverable key material remains and the Graph is locked again.
+    function logout() {
+        localStorage.removeItem(STORAGE_KEY);
+        clearKey();
+    }
+
     // Signs in with a fresh nsec + password: validates input, encrypts the nsec
     // under the password, persists the envelope, and unlocks the session.
     async function login(nsec, password) {
@@ -124,10 +131,11 @@
     }
 
     // Toggles the auth panel between the signed-out (login form) and signed-in
-    // views and refreshes the status line.
+    // (logout) views and refreshes the status line.
     function renderPanel() {
         setStatusLine();
         show('trace-login-form', state !== UNLOCKED);
+        show('trace-session-active', state === UNLOCKED);
     }
 
     function setLoginError(message) {
@@ -172,6 +180,20 @@
                 }
             });
         }
+        const logoutButton = el('trace-logout-btn');
+        if (logoutButton) {
+            logoutButton.addEventListener('click', logout);
+        }
+    }
+
+    // Keeps tabs consistent: when this credential is removed in another tab
+    // (logout elsewhere), lock this tab too so it stops using the key.
+    function bindCrossTabSync() {
+        window.addEventListener('storage', (e) => {
+            if (e.key === STORAGE_KEY && e.newValue === null && state === UNLOCKED) {
+                clearKey();
+            }
+        });
     }
 
     function init() {
@@ -179,6 +201,7 @@
             return;
         }
         bindControls();
+        bindCrossTabSync();
         renderPanel();
         emitStatus();
     }
@@ -188,7 +211,8 @@
         getPubkey: getPubkey,
         onStatusChange: onStatusChange,
         authHeader: authHeader,
-        login: login
+        login: login,
+        logout: logout
     };
 
     document.addEventListener('DOMContentLoaded', init);
