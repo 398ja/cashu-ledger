@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [Unreleased]
+
+### Fixed
+
+- **Ledger web relay display** — the inspection UI relay pill was a hardcoded `wss://relay.imani.casa` literal that ignored configuration. A new `HomeController` now injects the configured `ledger.web.relays` into the page so it reflects the relay the service actually reads from. The stale API-base placeholder was also genericised.
+
 ## [0.3.0] - 2026-06-20
 
 ### Added
