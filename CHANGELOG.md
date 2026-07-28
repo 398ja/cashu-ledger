@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [Unreleased]
+
+### Changed
+
+- Updated cashu-lib-crypto to 0.21.0 (was 0.9.1).
+
 ## [0.4.0] - 2026-06-22
 
 ### Added
