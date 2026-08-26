@@ -2,37 +2,145 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Cashu Ledger Web</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg:#0f172a; --card:#111827; --accent:#34d399; --text:#e5e7eb; --muted:#9ca3af; --border:#1f2937;
+            /* Platinum & Jade — a light, atmospheric palette for inspecting ecash mints */
+            --bg:#e7ece9; --surface:#ffffff; --surface-2:#f3f7f4; --card:#ffffff;
+            --ink:#15231c; --text:#15231c; --muted:#5e6d66;
+            --line:#dce3df; --border:#dce3df;
+            --green:#0f8a5a; --green-deep:#0a6b46; --green-bright:#1bb673;
+            --accent:#0f8a5a; --accent-soft:rgba(15,138,90,.10); --accent-ring:rgba(15,138,90,.32);
+            --amber:#9a6a06;
+            --radius:14px;
+            --shadow-sm:0 1px 2px rgba(20,42,30,.04), 0 2px 6px rgba(20,42,30,.05);
+            --shadow-md:0 6px 16px rgba(20,42,30,.06), 0 16px 40px rgba(20,42,30,.05);
+            --shadow-green:0 6px 18px rgba(15,138,90,.26);
+            --font-display:'Fraunces', Georgia, 'Times New Roman', serif;
+            --font-body:'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+            --font-mono:'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
         }
         * { box-sizing: border-box; }
-        body { margin:0; font-family:"Inter",system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); padding:24px; }
-        h1 { margin: 0; font-size: 26px; }
-        .top { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; margin-bottom:20px; gap:12px; }
-        .layout { display:grid; grid-template-columns: 250px 1fr; gap:16px; align-items:start; }
-        .sidebar { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px; min-height:420px; }
-        .menu-title { font-weight:700; letter-spacing:.4px; font-size:12px; color:var(--muted); text-transform:uppercase; padding:8px; }
-        .nav-btn { border:none; background:transparent; color:var(--text); text-align:left; padding:10px 12px; border-radius:8px; cursor:pointer; font-weight:600; }
-        .nav-btn:hover, .nav-btn.active { background:rgba(52,211,153,.12); color:var(--accent); }
-        .content { display:flex; flex-direction:column; gap:16px; }
-        .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; }
-        label { display:block; margin-bottom:6px; color:var(--muted); font-size:12px; letter-spacing:.4px; text-transform:uppercase; }
-        input, select { width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); background:#0b1220; color:var(--text); }
-        button.primary { margin-top:8px; padding:10px 12px; border:none; border-radius:8px; background:var(--accent); color:#0b1220; font-weight:600; cursor:pointer; }
-        button:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-        pre { background:#0b1220; border:1px solid var(--border); padding:12px; border-radius:8px; overflow:auto; min-height:180px; }
+        body {
+            margin:0; font-family:var(--font-body); color:var(--text); padding:30px;
+            min-height:100vh; position:relative; -webkit-font-smoothing:antialiased;
+            background-color:var(--bg);
+            background-image:
+                radial-gradient(1100px 620px at 8% -12%, rgba(27,182,115,.12), transparent 60%),
+                radial-gradient(920px 520px at 112% 6%, rgba(15,138,90,.09), transparent 56%),
+                radial-gradient(760px 760px at 50% 124%, rgba(120,140,130,.12), transparent 60%),
+                linear-gradient(180deg, #eef2f0 0%, #e4eae6 100%);
+            background-attachment:fixed;
+        }
+        /* fine grain overlay for tactile, non-flat surfaces */
+        body::before {
+            content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.38;
+            mix-blend-mode:multiply;
+            background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.45'/%3E%3C/svg%3E");
+        }
+        body > * { position:relative; z-index:1; }
+
+        h1 { margin:0; font-family:var(--font-display); font-weight:600; font-size:34px; line-height:1; letter-spacing:-.6px; color:var(--ink); }
+        h1 .mark { color:var(--green); }
+        h3 { font-family:var(--font-display); font-weight:600; font-size:19px; letter-spacing:-.2px; color:var(--ink); margin:0 0 15px; }
+
+        .top { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-start; margin-bottom:22px; gap:12px; }
+        .layout { display:grid; grid-template-columns: 250px 1fr; gap:18px; align-items:start; }
+
+        .sidebar {
+            background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+            padding:10px; display:flex; flex-direction:column; gap:3px; min-height:420px;
+            box-shadow:var(--shadow-sm); position:sticky; top:30px;
+        }
+        .menu-title { font-weight:700; letter-spacing:.7px; font-size:11px; color:var(--muted); text-transform:uppercase; padding:10px 12px 6px; }
+        .nav-btn {
+            position:relative; border:none; background:transparent; color:var(--muted);
+            text-align:left; padding:11px 14px; border-radius:10px; cursor:pointer;
+            font-family:var(--font-body); font-weight:600; font-size:14px;
+            transition:background .18s ease, color .18s ease;
+        }
+        .nav-btn:hover { background:var(--surface-2); color:var(--ink); }
+        .nav-btn.active { background:var(--accent-soft); color:var(--green-deep); }
+        .nav-btn.active::before {
+            content:""; position:absolute; left:0; top:50%; transform:translateY(-50%);
+            width:3px; height:18px; border-radius:0 3px 3px 0; background:var(--green);
+        }
+
+        .content { display:flex; flex-direction:column; gap:18px; }
+        .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:22px; box-shadow:var(--shadow-sm); }
+
+        label { display:block; margin-bottom:6px; color:var(--muted); font-size:11px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; }
+        input, select {
+            width:100%; padding:11px 13px; border-radius:10px; border:1px solid var(--line);
+            background:var(--surface-2); color:var(--ink); font-family:var(--font-body); font-size:14px;
+            transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;
+        }
+        input::placeholder { color:#9aa8a1; }
+        input:hover, select:hover { border-color:#c4d0ca; }
+        input:focus, select:focus { outline:none; border-color:var(--green); background:#fff; box-shadow:0 0 0 3px var(--accent-ring); }
+        input[type=checkbox], input[type=radio] { width:auto; accent-color:var(--green); margin-right:7px; vertical-align:middle; }
+        input[type=range] { width:170px; padding:0; background:transparent; border:none; accent-color:var(--green); }
+        input[type=range]:focus { box-shadow:none; }
+
+        button.primary {
+            margin-top:12px; padding:11px 20px; border:none; border-radius:10px;
+            background:linear-gradient(180deg, var(--green-bright), var(--green));
+            color:#fff; font-family:var(--font-body); font-weight:600; font-size:14px; cursor:pointer;
+            box-shadow:var(--shadow-green); transition:transform .15s ease, box-shadow .15s ease, filter .15s ease;
+        }
+        button.primary:hover { transform:translateY(-1px); box-shadow:0 9px 24px rgba(15,138,90,.32); filter:brightness(1.03); }
+        button.primary:active { transform:translateY(0); box-shadow:var(--shadow-green); }
+        button:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid var(--green); outline-offset:2px; }
+
+        pre {
+            background:var(--surface-2); border:1px solid var(--line); padding:15px; border-radius:10px;
+            overflow:auto; min-height:180px; font-family:var(--font-mono); font-size:12.5px; line-height:1.55; color:#22302a;
+        }
         .row { display:flex; gap:8px; flex-wrap:wrap; }
-        .toggle { display:inline-flex; gap:6px; align-items:center; cursor:pointer; color:var(--muted); font-size:12px; }
-        .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:rgba(52,211,153,.12); color:var(--accent); font-size:12px; }
-        .hamburger { border:1px solid var(--border); background:var(--card); color:var(--text); padding:8px 10px; border-radius:8px; cursor:pointer; display:none; }
-        .api-input { width:260px; max-width:100%; }
-        .ghost-btn { border:1px solid var(--border); background:transparent; color:var(--text); padding:8px 10px; border-radius:8px; cursor:pointer; }
+        .pill {
+            display:inline-flex; align-items:center; gap:8px; margin-top:11px;
+            padding:5px 12px 5px 10px; border-radius:999px; background:var(--accent-soft);
+            color:var(--green-deep); font-size:12px; font-weight:600; border:1px solid rgba(15,138,90,.18);
+        }
+        .pill::before {
+            content:""; width:7px; height:7px; border-radius:50%; background:var(--green-bright);
+            box-shadow:0 0 0 0 rgba(27,182,115,.5); animation:pulse 2.4s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow:0 0 0 0 rgba(27,182,115,.5); }
+            70% { box-shadow:0 0 0 6px rgba(27,182,115,0); }
+            100% { box-shadow:0 0 0 0 rgba(27,182,115,0); }
+        }
+        .hamburger {
+            border:1px solid var(--line); background:var(--surface); color:var(--ink);
+            padding:9px 14px; border-radius:10px; cursor:pointer; display:none;
+            font-family:var(--font-body); font-weight:600; box-shadow:var(--shadow-sm);
+        }
+        .api-input { width:280px; max-width:100%; }
+        .ghost-btn {
+            border:1px solid var(--line); background:var(--surface); color:var(--ink);
+            padding:9px 14px; border-radius:10px; cursor:pointer;
+            font-family:var(--font-body); font-weight:600; font-size:13px;
+            transition:border-color .15s ease, color .15s ease, background .15s ease;
+        }
+        .ghost-btn:hover { border-color:var(--green); color:var(--green-deep); background:var(--accent-soft); }
+
+        @keyframes rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+        @media (prefers-reduced-motion: no-preference) {
+            .top, .sidebar, .content > .card:not([hidden]) { animation:rise .5s cubic-bezier(.2,.7,.2,1) both; }
+            .top { animation-delay:.02s; }
+            .sidebar { animation-delay:.08s; }
+            .content > .card:not([hidden]) { animation-delay:.13s; }
+        }
+
         @media (max-width: 960px) {
-            body { padding:16px; }
+            body { padding:18px; }
             .layout { grid-template-columns: 1fr; }
-            .sidebar { display:none; }
+            .sidebar { display:none; position:static; }
             .sidebar.open { display:flex; }
             .hamburger { display:inline-flex; align-items:center; gap:6px; }
         }
@@ -41,12 +149,11 @@
 <body data-api-base="/proxy">
 <div class="top">
     <div>
-        <h1>Cashu Ledger</h1>
+        <h1>Cashu <span class="mark">Ledger</span></h1>
         <div class="pill" th:text="'Relay: ' + ${relay}">Relay: wss://relay.imani.casa</div>
     </div>
     <div class="row" style="align-items:center;">
         <button class="hamburger" id="menu-toggle" aria-label="Toggle navigation">☰ Menu</button>
-        <label class="toggle"><input type="checkbox" id="theme-toggle"> Light mode</label>
     </div>
 </div>
 
@@ -135,8 +242,9 @@
         <div class="card panel" data-section="trace" hidden>
             <h3>Transaction Graph</h3>
             <div id="trace-auth-panel" style="margin-bottom:10px;">
-                <div id="trace-auth-status" style="padding:8px 10px; border-radius:6px;
-                     background:rgba(234,179,8,0.12); color:var(--text); font-size:13px;">
+                <div id="trace-auth-status" style="padding:9px 12px; border-radius:10px;
+                     background:var(--accent-soft); border:1px solid var(--line);
+                     color:var(--green-deep); font-size:13px; font-weight:600;">
                     Sign in with your nsec to view the transaction graph.
                 </div>
                 <div id="trace-login-form" style="margin-top:8px;">
@@ -233,7 +341,7 @@
                 </div>
                 <button class="primary" id="trace-render-btn">Render</button>
             </div>
-            <div id="trace-truncated" style="display:none; margin-top:8px; color:#eab308; font-size:13px;"></div>
+            <div id="trace-truncated" style="display:none; margin-top:8px; color:var(--amber); font-weight:600; font-size:13px;"></div>
             <div class="row" style="gap:12px; margin-top:12px; align-items:stretch; flex-wrap:wrap;">
                 <div id="trace-graph" style="flex:2; min-width:320px; height:460px; border:1px solid var(--border);
                      border-radius:8px; background:var(--card);"></div>
@@ -376,23 +484,6 @@
     }
 </script>
 <script>
-    const toggle = document.getElementById('theme-toggle');
-    toggle.addEventListener('change', () => {
-        if (toggle.checked) {
-            document.documentElement.style.setProperty('--bg', '#f8fafc');
-            document.documentElement.style.setProperty('--card', '#ffffff');
-            document.documentElement.style.setProperty('--text', '#0f172a');
-            document.documentElement.style.setProperty('--muted', '#64748b');
-            document.documentElement.style.setProperty('--border', '#e2e8f0');
-        } else {
-            document.documentElement.style.setProperty('--bg', '#0f172a');
-            document.documentElement.style.setProperty('--card', '#111827');
-            document.documentElement.style.setProperty('--text', '#e5e7eb');
-            document.documentElement.style.setProperty('--muted', '#9ca3af');
-            document.documentElement.style.setProperty('--border', '#1f2937');
-        }
-    });
-
     const sidebar = document.getElementById('sidebar');
     const menuToggle = document.getElementById('menu-toggle');
     const navButtons = Array.from(document.querySelectorAll('.nav-btn'));

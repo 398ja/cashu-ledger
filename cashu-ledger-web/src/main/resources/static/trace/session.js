@@ -170,13 +170,16 @@
         if (state === UNLOCKED) {
             line.textContent = 'Signed in as ' + pubkey.slice(0, 12) + '… '
                 + 'Fields shown depend on your operator access level.';
-            line.style.background = 'rgba(34,197,94,0.14)';
+            line.style.background = 'rgba(15,138,90,0.12)';
+            line.style.color = 'var(--green-deep)';
         } else if (hasStoredCredential()) {
             line.textContent = 'Enter your password to unlock the transaction graph.';
-            line.style.background = 'rgba(234,179,8,0.12)';
+            line.style.background = 'rgba(154,106,6,0.12)';
+            line.style.color = 'var(--amber)';
         } else {
             line.textContent = 'Sign in with your nsec to view the transaction graph.';
-            line.style.background = 'rgba(234,179,8,0.12)';
+            line.style.background = 'rgba(154,106,6,0.12)';
+            line.style.color = 'var(--amber)';
         }
     }
 

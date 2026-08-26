@@ -4,6 +4,25 @@ All notable changes to this project are documented here. This project follows Co
 
 ## [Unreleased]
 
+### Added
+
+- The spec-048 publisher meters, `gateway_trace_publisher_outbox_depth` and
+  `gateway_trace_publisher_publish_attempts_total`. Three alert rules in
+  imani-deploy already matched on them and neither meter existed, so none could
+  fire. `OutboxDepthAlertTest` drove an in-test counter and asserted the same
+  expression *shape*, which checks the alert logic and nothing about whether a
+  scrape can produce the series.
+
+  Micrometer is an **optional** dependency and the meters sit behind
+  `@ConditionalOnClass`, matching the existing OpenTelemetry decorator, so a
+  consumer without it keeps the whole publisher stack minus the meters.
+  `OutboxDispatcher` reports outcomes through a small `PublishOutcomeListener`
+  rather than taking a metrics dependency of its own.
+
+  **Consumers must upgrade to pick this up.** imani-gateway-customer resolves
+  this module at 0.3.0 through `imani-bom`, so the meters arrive there only
+  once the BOM advances past this release.
+
 ### Changed
 
 - Updated cashu-lib-crypto to 0.21.0 (was 0.9.1).

@@ -4,7 +4,7 @@ server:
 ledger:
   web:
     relays:
-      - wss://relay.imani.casa
+      - wss://relay.staging.398ja.xyz
     timeout: 30s
     cache-ttl: 30s
     storage:

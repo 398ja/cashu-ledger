@@ -117,22 +117,23 @@
     function styleSheet() {
         return [
             { selector: 'node', style: {
-                'label': 'data(label)', 'font-size': '9px', 'color': '#e5e7eb',
+                'label': 'data(label)', 'font-size': '9px', 'color': '#ffffff', 'font-weight': 600,
+                'text-outline-width': 1.5, 'text-outline-color': 'rgba(21,35,28,.45)',
                 'text-valign': 'center', 'text-halign': 'center', 'width': 34, 'height': 34,
-                'background-color': 'mapData(hue, 0, 360, hsl(0,60%,50%), hsl(360,60%,50%))',
-                'shape': 'ellipse', 'border-width': 1, 'border-color': '#1f2937' } },
+                'background-color': 'mapData(hue, 0, 360, hsl(0,55%,52%), hsl(360,55%,52%))',
+                'shape': 'ellipse', 'border-width': 1, 'border-color': '#cfd8d3' } },
             { selector: 'node[terminal = 1]', style: { 'background-opacity': 0.35, 'border-style': 'dashed' } },
-            { selector: 'node:selected', style: { 'border-width': 3, 'border-color': '#38bdf8' } },
+            { selector: 'node:selected', style: { 'border-width': 3, 'border-color': '#0f8a5a' } },
             { selector: '$node > node', style: { 'padding': 12 } },
             { selector: '.mint-group', style: {
-                'background-opacity': 0.05, 'border-color': '#334155', 'shape': 'round-rectangle',
-                'font-size': '8px', 'text-valign': 'top', 'color': '#94a3b8' } },
+                'background-opacity': 0.05, 'border-color': '#c4d0ca', 'shape': 'round-rectangle',
+                'font-size': '8px', 'text-valign': 'top', 'color': '#5e6d66' } },
             { selector: 'edge', style: {
-                'label': 'data(label)', 'font-size': '8px', 'color': '#94a3b8', 'width': 1.5,
-                'line-color': '#475569', 'target-arrow-color': '#475569', 'target-arrow-shape': 'triangle',
+                'label': 'data(label)', 'font-size': '8px', 'color': '#5e6d66', 'width': 1.5,
+                'line-color': '#a7b6ae', 'target-arrow-color': '#a7b6ae', 'target-arrow-shape': 'triangle',
                 'curve-style': 'bezier' } },
-            { selector: 'edge[transfer = 1]', style: { 'line-style': 'dashed', 'line-color': '#38bdf8',
-                'target-arrow-color': '#38bdf8' } },
+            { selector: 'edge[transfer = 1]', style: { 'line-style': 'dashed', 'line-color': '#1bb673',
+                'target-arrow-color': '#1bb673' } },
             { selector: 'edge[missing = 1]', style: { 'line-color': '#ef4444', 'target-arrow-color': '#ef4444' } },
             { selector: 'edge[doubleConsume = 1]', style: { 'line-color': '#ef4444', 'width': 2.5 } }
         ];
@@ -147,7 +148,7 @@
 
     async function render() {
         if (!isUnlocked()) {
-            el('trace-detail').innerHTML = '<div style="color:#eab308;">Sign in with your nsec to view the graph.</div>';
+            el('trace-detail').innerHTML = '<div style="color:var(--green-deep);font-weight:600;">Sign in with your nsec to view the graph.</div>';
             return;
         }
         const type = el('trace-anchor-type').value;
@@ -219,7 +220,7 @@
     async function showDetail(eventId) {
         const detail = el('trace-detail');
         if (!isUnlocked()) {
-            detail.innerHTML = '<div style="color:#eab308;">Sign in with your nsec to inspect events.</div>';
+            detail.innerHTML = '<div style="color:var(--green-deep);font-weight:600;">Sign in with your nsec to inspect events.</div>';
             return;
         }
         detail.innerHTML = '<div style="color:var(--muted);font-size:13px;">Loading event…</div>';
@@ -240,7 +241,7 @@
         const kind = escapeHtml(event.kind || 'event');
         const anchorBtn = '<button class="ghost-btn" id="trace-anchor-here">Anchor here</button>';
         const note = mode === 'full'
-            ? '<span style="color:#22c55e;">full payload — secrets visible to your access level</span>'
+            ? '<span style="color:var(--green-deep);font-weight:600;">full payload — secrets visible to your access level</span>'
             : '<span style="color:var(--muted);">' + mode + ' payload — secrets withheld at your access level</span>';
         detail.innerHTML = '<div class="row" style="justify-content:space-between;align-items:center;">'
             + '<strong>' + kind + '</strong>' + anchorBtn + '</div>'
