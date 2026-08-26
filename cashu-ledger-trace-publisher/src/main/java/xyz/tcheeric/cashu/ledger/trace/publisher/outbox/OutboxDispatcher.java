@@ -35,6 +35,41 @@ public final class OutboxDispatcher implements AutoCloseable {
 
     private ScheduledExecutorService scheduler;
 
+    /**
+     * Notified of each delivery outcome. Defaults to a no-op so this module
+     * keeps no hard dependency on a metrics library: the Spring starter
+     * supplies a Micrometer-backed listener when one is available.
+     */
+    private volatile PublishOutcomeListener outcomeListener = PublishOutcomeListener.NO_OP;
+
+    /** Callback for delivery outcomes, so metrics can be attached without coupling. */
+    public interface PublishOutcomeListener {
+        PublishOutcomeListener NO_OP = new PublishOutcomeListener() {
+            @Override
+            public void onSuccess() {
+                // no-op
+            }
+
+            @Override
+            public void onFailure() {
+                // no-op
+            }
+        };
+
+        void onSuccess();
+
+        void onFailure();
+    }
+
+    /**
+     * Attaches a delivery-outcome listener.
+     *
+     * @param listener the listener; null restores the no-op
+     */
+    public void setOutcomeListener(PublishOutcomeListener listener) {
+        this.outcomeListener = listener == null ? PublishOutcomeListener.NO_OP : listener;
+    }
+
     public OutboxDispatcher(OutboxStore outbox, RelayPublisher relayPublisher,
                             int batchSize, long pollIntervalMs, LongSupplier clock) {
         this.outbox = outbox;
@@ -88,7 +123,9 @@ public final class OutboxDispatcher implements AutoCloseable {
             if (result.deliveredToLedgerRelay()) {
                 outbox.markDelivered(record.operationId());
                 delivered++;
+                outcomeListener.onSuccess();
             } else {
+                outcomeListener.onFailure();
                 long next = nowMs + backoffMillis(record.attempts());
                 outbox.recordFailure(record.operationId(), next);
                 LOGGER.warn("outbox_delivery_failed operation_id={} attempts={} next_attempt_ms={} detail={}",
