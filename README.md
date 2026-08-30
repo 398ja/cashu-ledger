@@ -132,7 +132,13 @@ Full documentation is available in the [docs](docs/) directory:
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License.
+
+> **Note:** unlike the sibling repositories (cashu-lib, cashu-mint, cashu-wallet,
+> cashu-voucher, cashu-vault), this repository has no `LICENSE` file committed. The
+> MIT statement above is the only licence declaration. Adding the file is worth
+> doing; it is left to a maintainer because it is a legal assertion rather than a
+> documentation fix.
 
 ## Related Projects
 
