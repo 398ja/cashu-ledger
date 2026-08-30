@@ -1,0 +1,16 @@
+# Names in docs that are not Java types. Checked by `doccheck`.
+#
+# The design/ and reference/ specifications describe intended architecture.
+# These names are specified but not yet implemented; they are listed here so
+# doccheck reports real drift rather than known-unbuilt design vocabulary.
+
+StateJournal
+StateTransitionService
+StateChangePublisher
+ClientSyncEngine
+ClientVoucherService
+VoucherListItem
+NostrDbWithSqliteIndexTraceEventStore
+
+# Section marker in the traceability spec, not a type
+UN1
