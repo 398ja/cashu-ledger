@@ -4,6 +4,16 @@ All notable changes to this project are documented here. This project follows Co
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-31
+
+Released as 0.5.0 rather than 0.4.0. The repository's pom said `0.4.0`, but no
+0.4.0 was ever published: reposilite held only 0.3.0, so both 0.3.1 and 0.4.0
+existed as changelog entries and nothing else. Publishing this tree as 0.4.0
+would have shipped an artifact that the 0.4.0 entry below does not describe,
+because the tree has since gained the publisher meters and a cashu-lib-crypto
+jump. Consumers crossing 0.3.0 to here therefore also take 0.3.1's relay-display
+fix and 0.4.0's nsec login, including its removal of NIP-07 sign-in.
+
 ### Added
 
 - The spec-048 publisher meters, `gateway_trace_publisher_outbox_depth` and
