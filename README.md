@@ -10,6 +10,9 @@ A tool for inspecting and analyzing Cashu vouchers stored on Nostr relays.
 - **Search** - Find vouchers by issuer, status, value, and other criteria
 - **Verification** - Validate signatures and value conservation
 - **Local Caching** - Optional persistent caching with nostrdb-jni for sub-millisecond queries
+- **Forensic trace ledger** - Signed kind-9079 trace events published by producers such as
+  cashu-mint and gateway-customer. See [Operate the trace ledger](docs/how-to/operate-trace-ledger.md)
+  and the [trace API reference](docs/reference/trace-api.md).
 
 ## Quick Start
 
@@ -20,16 +23,16 @@ A tool for inspecting and analyzing Cashu vouchers stored on Nostr relays.
 ./mvnw clean package -DskipTests
 
 # Inspect a voucher
-java -jar cashu-ledger-cli/target/cashu-ledger-cli-0.2.0.jar inspect v-1766748473969
+java -jar cashu-ledger-cli/target/cashu-ledger-cli-0.4.0.jar inspect v-1766748473969
 
 # View voucher tree
-java -jar cashu-ledger-cli/target/cashu-ledger-cli-0.2.0.jar tree v-1766748473969
+java -jar cashu-ledger-cli/target/cashu-ledger-cli-0.4.0.jar tree v-1766748473969
 ```
 
 ### Docker (Web UI)
 
 ```bash
-docker run -p 6060:6060 docker.398ja.xyz/cashu-ledger-web:0.2.0
+docker run -p 6060:6060 docker.398ja.xyz/cashu-ledger-web:0.4.0
 ```
 
 Access the web interface at `http://localhost:6060`.
@@ -38,12 +41,19 @@ Access the web interface at `http://localhost:6060`.
 
 ```
 cashu-ledger/
-├── cashu-ledger-core/           # Domain models, services, relay connectivity
-├── cashu-ledger-cli/            # Picocli command-line interface
-├── cashu-ledger-web/            # Spring Boot REST API & Web UI
-├── cashu-ledger-e2e-tests/      # End-to-end tests
-└── cashu-ledger-integration-tests/  # Integration tests
+├── cashu-ledger-trace-core/      # Trace event model shared by producers and the ledger
+├── cashu-ledger-trace-publisher/ # Producer-side publisher: outbox, signing, redaction
+├── cashu-ledger-core/            # Domain models, services, relay connectivity
+├── cashu-ledger-cli/             # Picocli command-line interface
+├── cashu-ledger-web/             # Spring Boot REST API & Web UI
+├── cashu-ledger-integration-tests/
+└── cashu-ledger-e2e-tests/
 ```
+
+`cashu-ledger-trace-publisher` is the module other services embed to emit trace
+events; cashu-mint and gateway-customer both depend on it. It carries the
+file-backed outbox that lets events survive a producer restart, the signing key
+handling, and the redaction that pseudonymises initiator pubkeys.
 
 ## Requirements
 
@@ -94,8 +104,11 @@ Full documentation is available in the [docs](docs/) directory:
 - [Getting Started](docs/tutorials/getting-started.md)
 - [CLI Reference](docs/reference/cli-commands.md)
 - [REST API Reference](docs/reference/rest-api.md)
+- [Trace API Reference](docs/reference/trace-api.md)
 - [Configuration](docs/reference/configuration.md)
+- [Operate the trace ledger](docs/how-to/operate-trace-ledger.md)
 - [Architecture](docs/explanation/architecture.md)
+- [Transaction traceability specification](docs/design/transaction-traceability-specification.md)
 
 ## Development
 
@@ -119,7 +132,13 @@ Full documentation is available in the [docs](docs/) directory:
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License.
+
+> **Note:** unlike the sibling repositories (cashu-lib, cashu-mint, cashu-wallet,
+> cashu-voucher, cashu-vault), this repository has no `LICENSE` file committed. The
+> MIT statement above is the only licence declaration. Adding the file is worth
+> doing; it is left to a maintainer because it is a legal assertion rather than a
+> documentation fix.
 
 ## Related Projects
 

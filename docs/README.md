@@ -31,6 +31,7 @@ Task-oriented guides that show you how to solve specific problems.
 | [Enable Local Caching](how-to/enable-local-caching.md) | Configure nostrdb-jni for persistent event caching |
 | [Deploy with Docker](how-to/docker-deployment.md) | Run cashu-ledger-web in a container |
 | [Operate the Trace Ledger](how-to/operate-trace-ledger.md) | Enable ingest, authorise readers, monitor, and prune the traceability ledger |
+| [Sign in with your nsec](how-to/sign-in-with-nsec.md) | Sign in to the web Transaction Graph with an nsec + password, unlock, and sign out |
 
 ### Reference
 

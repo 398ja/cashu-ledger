@@ -248,6 +248,74 @@ server:
   port: 6060
 ```
 
+## Trace ledger configuration
+
+The forensic trace ledger binds these prefixes. Each corresponds to a
+`@ConfigurationProperties` class in `cashu-ledger-web`; the names below are the
+ones the code actually binds.
+
+### `trace.ingest`
+
+| Property | Purpose |
+|----------|---------|
+| `trace.ingest.enabled` | Enable trace event ingest |
+| `trace.ingest.allow-historical` | Accept events older than the retention window. Without it, a stale `created_at` is rejected as `CLOCK_SKEW_STALE` |
+| `trace.ingest.producers` | Accepted producer identities |
+| `trace.ingest.pubkeys` | Accepted producer public keys |
+| `trace.ingest.mint-url` | Mint URL expected on ingested events |
+
+### `trace.retention`
+
+| Property | Default | Purpose |
+|----------|---------|---------|
+| `trace.retention.enabled` | | Enable the retention sweep |
+| `trace.retention.age-window` | | Per-event age threshold |
+| `trace.retention.terminal-window` | | Window applied to terminal events |
+| `trace.retention.terminal-subdag-enabled` | `true` | Prune fully terminal sub-DAGs ahead of the age threshold. Set `false` for age-only pruning |
+| `trace.retention.batch-limit` | | Rows per sweep |
+| `trace.retention.sweep-delay` | | Interval between sweeps |
+
+> **Naming note.** The traceability specification refers to this control as
+> `trace.pruning.terminal-subdag.enabled`. The implementation binds
+> **`trace.retention.terminal-subdag-enabled`** under `TraceRetentionProperties`.
+> Use the implementation name; the specification name sets nothing.
+
+### `trace.issuer`
+
+| Property | Purpose |
+|----------|---------|
+| `trace.issuer.pre-voucher-exposure` | Issuer-field exposure on events not yet voucher-bound: `suppress` or `summary-withhold`. Read-time only; never alters stored events |
+
+### `trace.limits`
+
+| Property | Purpose |
+|----------|---------|
+| `trace.limits.max-walk-nodes` | Cap on nodes visited during a graph walk |
+| `trace.limits.max-page-limit` | Maximum page size on trace queries |
+
+### `trace.security`
+
+| Property | Purpose |
+|----------|---------|
+| `trace.security.auth-skew-seconds` | Accepted clock skew on authenticated trace requests |
+| `trace.security.redaction-master-key-hex` | Master key for pseudonymisation. **Secret** |
+| `trace.security.authorities` | Read authorities: `trace:read:summary`, `trace:read:hashed`, `trace:read:full` |
+| `trace.security.grants` | Authority grants per caller |
+
+### `trace.storage`
+
+| Property | Default | Purpose |
+|----------|---------|---------|
+| `trace.storage.nostrdb-enabled` | `false` | Gates the nostrdb-backed trace index. The index beans are `@ConditionalOnProperty` on it, so leaving it off disables them entirely |
+| `trace.storage.nostrdb-path` | `${user.home}/.cashu-ledger/trace-ndb` | Local nostrdb path for trace events |
+| `trace.storage.sidecar-jdbc-url` | `jdbc:sqlite::memory:` | Sidecar database URL. **The in-memory default does not survive a restart**; set a file-backed URL in any real deployment |
+
+### Producer side
+
+Services that *emit* trace events (cashu-mint, gateway-customer) bind
+`cashu.trace.publisher` from `cashu-ledger-trace-publisher`, not the prefixes
+above. See [Operate the trace ledger](../how-to/operate-trace-ledger.md).
+
 ## Related Documentation
 
 - [Enable Local Caching](../how-to/enable-local-caching.md)
