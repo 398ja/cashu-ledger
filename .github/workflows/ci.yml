@@ -2,9 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    # master, not main: this repository has no main branch, so the previous trigger meant CI
+    # never ran on the default branch. Every push to master went untested, and the only reason
+    # that was not obvious is that develop matched and most work lands there first.
+    branches: [master, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [master, develop]
 
 jobs:
   build:
