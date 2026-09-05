@@ -212,11 +212,15 @@
         }
         try {
             await login(nsecField.value.trim(), passwordField.value);
-            nsecField.value = '';
-            passwordField.value = '';
         } catch (e) {
             setLoginError(e.message);
         } finally {
+            // Cleared on every path, not just success (audit L-25). A failed login left the
+            // nsec sitting in the input, so it stayed in the DOM for anyone who walked up to
+            // the screen and survived into a browser crash dump. A wrong password is exactly
+            // when the field is most likely to be left alone and forgotten.
+            nsecField.value = '';
+            passwordField.value = '';
             if (button) {
                 button.disabled = false;
             }
@@ -240,10 +244,11 @@
         }
         try {
             await unlock(passwordField.value);
-            passwordField.value = '';
         } catch (e) {
             setUnlockError(e.message);
         } finally {
+            // See handleLogin: cleared on every path.
+            passwordField.value = '';
             if (button) {
                 button.disabled = false;
             }

@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import xyz.tcheeric.cashu.ledger.web.security.TraceIssuerProperties;
@@ -39,14 +40,62 @@ public class TraceWebConfig {
     @Bean(destroyMethod = "close")
     public SqliteSidecarIndex traceSidecarIndex(
             @Value("${trace.storage.sidecar-jdbc-url:jdbc:sqlite::memory:}") String jdbcUrl) {
-        return new SqliteSidecarIndex(jdbcUrl);
+        SqliteSidecarIndex index = new SqliteSidecarIndex(jdbcUrl);
+        restrictToOwner(sqlitePathOf(jdbcUrl));
+        return index;
     }
 
     @Bean(destroyMethod = "close")
+
     @ConditionalOnProperty(prefix = "trace.storage", name = "nostrdb-enabled", havingValue = "true")
     public RawEventStore nostrdbRawEventStore(
             @Value("${trace.storage.nostrdb-path:${user.home}/.cashu-ledger/trace-ndb}") String path) {
-        return NostrDbRawEventStore.open(java.nio.file.Path.of(path));
+        RawEventStore store = NostrDbRawEventStore.open(java.nio.file.Path.of(path));
+        restrictToOwner(java.nio.file.Path.of(path));
+        return store;
+    }
+
+    /**
+     * The filesystem path behind a SQLite JDBC URL, or null for in-memory.
+     */
+    private static java.nio.file.Path sqlitePathOf(String jdbcUrl) {
+        if (jdbcUrl == null || !jdbcUrl.startsWith("jdbc:sqlite:")) {
+            return null;
+        }
+        String path = jdbcUrl.substring("jdbc:sqlite:".length());
+        if (path.isBlank() || path.startsWith(":")) {
+            return null; // :memory: and friends
+        }
+        return java.nio.file.Path.of(path);
+    }
+
+    /**
+     * Narrows a store to owner-only access.
+     *
+     * <p>These files hold the trace index and the raw events behind it, which is the ledger's
+     * view of who transacted with whom. They were created with whatever the process umask
+     * happened to be (audit L-29), which on a default Linux umask is world-readable. Anyone with
+     * a shell on the host could read the graph without touching the API that authorises access
+     * to it.
+     *
+     * <p>Best-effort by design: a non-POSIX filesystem, a bind mount with fixed ownership, or a
+     * store that does not exist yet all make this impossible, and none of them is a reason to
+     * refuse to start. The warning is what makes the gap visible.
+     */
+    private static void restrictToOwner(java.nio.file.Path path) {
+        if (path == null || !java.nio.file.Files.exists(path)) {
+            return;
+        }
+        try {
+            java.nio.file.Files.setPosixFilePermissions(path,
+                    java.util.EnumSet.of(
+                            java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                            java.nio.file.attribute.PosixFilePermission.OWNER_WRITE));
+        } catch (UnsupportedOperationException | java.io.IOException e) {
+            LoggerFactory.getLogger(TraceWebConfig.class).warn(
+                    "Could not restrict permissions on {}: it may be readable by other users on "
+                            + "this host. Reason: {}", path, e.getMessage());
+        }
     }
 
     @Bean
