@@ -11,6 +11,7 @@ import xyz.tcheeric.cashu.ledger.core.relay.NostrRelayConnectionManager;
 import xyz.tcheeric.cashu.ledger.core.relay.RelayConnectionManager;
 import xyz.tcheeric.cashu.ledger.core.service.VoucherLedgerService;
 import xyz.tcheeric.cashu.ledger.core.service.VoucherLedgerServiceImpl;
+import xyz.tcheeric.cashu.ledger.core.trace.IssuerAttestationConfig;
 import xyz.tcheeric.cashu.ledger.core.storage.EventStore;
 import xyz.tcheeric.cashu.ledger.core.storage.EventStoreConfig;
 import xyz.tcheeric.cashu.ledger.core.storage.NostrDbEventStore;
@@ -59,12 +60,24 @@ public class WebConfig {
     public VoucherLedgerService voucherLedgerService(
             WebLedgerProperties properties,
             RelayConnectionManager relayConnectionManager) {
+        // Without this registry no issuer can be attested, so verify() reports every voucher's
+        // signature as untrusted and /verify answers signatureValid=false for everything. The
+        // default is deliberately fail-closed, but a default nobody can change is just broken,
+        // so warn loudly rather than let it look like a verification result.
+        IssuerAttestationConfig issuerAttestation =
+                new IssuerAttestationConfig(properties.getIssuerKeys());
+        if (issuerAttestation.isEmpty()) {
+            LOGGER.warn("No ledger.web.issuer-keys configured: voucher verification will report "
+                    + "signatureValid=false for every voucher, because no issuer key is trusted. "
+                    + "Configure ledger.web.issuer-keys.<issuerId>=<hex pubkey> to enable it.");
+        }
         return new VoucherLedgerServiceImpl(
                 relayConnectionManager,
                 properties.getRelays(),
                 properties.getTimeout(),
                 properties.getTimeout(),
-                properties.getCacheTtl()
+                properties.getCacheTtl(),
+                issuerAttestation
         );
     }
 }

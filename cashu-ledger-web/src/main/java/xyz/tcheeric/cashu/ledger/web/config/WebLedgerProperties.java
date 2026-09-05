@@ -4,7 +4,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @ConfigurationProperties(prefix = "ledger.web")
 public class WebLedgerProperties {
@@ -12,6 +14,22 @@ public class WebLedgerProperties {
     private Duration timeout = Duration.ofSeconds(30);
     private Duration cacheTtl = Duration.ofSeconds(30);
     private StorageProperties storage = new StorageProperties();
+    /**
+     * Issuer id to public key, the trust anchor that lets verify() report signatureValid=true.
+     *
+     * <p>Empty means no issuer can be attested, so every voucher verifies as untrusted. That is
+     * the honest answer with nothing to check against, but it is only a safe default if it can
+     * actually be changed — configure as {@code ledger.web.issuer-keys.<id>: <hex pubkey>}.
+     */
+    private Map<String, String> issuerKeys = new LinkedHashMap<>();
+
+    public Map<String, String> getIssuerKeys() {
+        return issuerKeys;
+    }
+
+    public void setIssuerKeys(Map<String, String> issuerKeys) {
+        this.issuerKeys = issuerKeys == null ? new LinkedHashMap<>() : issuerKeys;
+    }
 
     public List<String> getRelays() {
         return relays;

@@ -87,7 +87,9 @@ public class SearchCommand implements Callable<Integer> {
                 new NostrRelayConnectionManager(),
                 parent.relayUrls(),
                 Duration.ofSeconds(timeout),
-                Duration.ofSeconds(timeout)
+                Duration.ofSeconds(timeout),
+                null,                          // default cache TTL
+                parent.issuerAttestation()     // --issuer-key; empty means nothing is trusted
         );
     }
 
