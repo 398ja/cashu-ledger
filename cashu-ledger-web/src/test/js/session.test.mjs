@@ -36,19 +36,36 @@ test('encrypt then decrypt round-trips the secret key', async () => {
     assert.deepEqual(Array.from(recovered), Array.from(secretKey));
 });
 
-/** The stored envelope carries no plaintext key or password, only ciphertext + non-secret params. */
+/**
+ * The stored envelope carries no plaintext key or password, only ciphertext + non-secret params.
+ *
+ * The password here is long and distinctive on purpose. This test used to encrypt under 'pw' and
+ * assert the serialized envelope did not contain that string, which fails about 2.4% of the time:
+ * "pw" is two base64url characters, the envelope carries roughly a hundred positions of random
+ * base64, and 1-(1-1/4096)^100 is not small. A test that reddens CI one run in forty, on a random
+ * repository, teaches people to re-run rather than to read.
+ *
+ * A password long enough not to occur by chance tests the same property without the coin flip.
+ */
 test('the envelope contains no plaintext secret material', async () => {
     // Arrange
     const secretKey = randomSecretKey();
+    const password = 'correct-horse-battery-staple-9f3a2b7c';
 
     // Act
-    const envelope = await core.encryptSecretKey(secretKey, 'pw');
+    const envelope = await core.encryptSecretKey(secretKey, password);
     const serialized = JSON.stringify(envelope);
 
     // Then
     assert.equal(core.isWellFormedEnvelope(envelope), true);
-    assert.ok(!serialized.includes('pw'));
-    assert.ok(!serialized.includes(NostrTools.nip19.nsecEncode(secretKey)));
+    assert.ok(!serialized.includes(password), 'the password must not be recoverable');
+    assert.ok(!serialized.includes(NostrTools.nip19.nsecEncode(secretKey)),
+        'the nsec must not be recoverable');
+    // The raw key bytes must not appear in any of the encodings the envelope uses either.
+    const hex = Array.from(secretKey, b => b.toString(16).padStart(2, '0')).join('');
+    assert.ok(!serialized.includes(hex), 'the key must not appear as hex');
+    assert.ok(!serialized.includes(Buffer.from(secretKey).toString('base64')),
+        'the key must not appear as base64');
 });
 
 /** A valid nsec validates and decodes to a 32-byte secret key. */
