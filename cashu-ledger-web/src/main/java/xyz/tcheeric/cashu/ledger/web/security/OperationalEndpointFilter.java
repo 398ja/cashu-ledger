@@ -41,7 +41,7 @@ public final class OperationalEndpointFilter extends OncePerRequestFilter {
     protected void doFilterInternal(final HttpServletRequest request,
                                     final HttpServletResponse response,
                                     final FilterChain filterChain) throws ServletException, IOException {
-        if (!isProtected(request.getRequestURI())) {
+        if (!isProtected(pathWithinApplication(request))) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -58,10 +58,42 @@ public final class OperationalEndpointFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private static boolean isProtected(final String uri) {
+    /**
+     * The request path with the context path removed.
+     *
+     * <p>This filter previously matched against {@code getRequestURI()}, which includes the
+     * context path. Deployed under any non-root {@code server.servlet.context-path} the URI reads
+     * {@code /ledger/actuator/prometheus}, which does not start with {@code /actuator/prometheus},
+     * so every prefix missed and the filter permitted everything: authentication silently absent,
+     * with the filter still registered and looking like it worked.
+     *
+     * <p>{@code getServletPath()} is already context-relative, so the comparison holds wherever
+     * the application is mounted. It is empty for some dispatch types, hence the fallback that
+     * strips the context path by hand rather than matching against nothing.
+     */
+    private static String pathWithinApplication(final HttpServletRequest request) {
+        final String servletPath = request.getServletPath();
+        if (servletPath != null && !servletPath.isEmpty()) {
+            return servletPath;
+        }
+        final String uri = request.getRequestURI();
         if (uri == null) {
+            return null;
+        }
+        final String contextPath = request.getContextPath();
+        if (contextPath != null && !contextPath.isEmpty() && uri.startsWith(contextPath)) {
+            return uri.substring(contextPath.length());
+        }
+        return uri;
+    }
+
+    private static boolean isProtected(final String path) {
+        if (path == null) {
             return false;
         }
-        return PROTECTED_PREFIXES.stream().anyMatch(uri::startsWith);
+        // Case-insensitive: the filter must not be weaker than the mapping it guards, and a
+        // container that routes /ACTUATOR/... to the same handler would otherwise bypass it.
+        final String normalised = path.toLowerCase(java.util.Locale.ROOT);
+        return PROTECTED_PREFIXES.stream().anyMatch(normalised::startsWith);
     }
 }
