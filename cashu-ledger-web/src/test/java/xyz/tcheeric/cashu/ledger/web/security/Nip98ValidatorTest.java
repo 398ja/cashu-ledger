@@ -133,4 +133,31 @@ class Nip98ValidatorTest {
                 .isInstanceOf(Nip98Exception.class)
                 .hasMessageContaining("window");
     }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("an auth event cannot be presented twice")
+    void authEventIsSingleUse() throws Exception {
+        // The signature proves who authored the event; it says nothing about how many times it
+        // has been presented. Anyone who observed one Authorization header could resend it until
+        // the skew window closed (audit M-25).
+        String token = header("GET", URL, NOW_SEC);
+
+        assertThat(validator.authenticate(token, "GET", URL)).isEqualTo(PUB);
+
+        assertThatThrownBy(() -> validator.authenticate(token, "GET", URL))
+            .as("the same event replayed inside the window must be refused")
+            .hasMessageContaining("already been used");
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("a distinct auth event still works after one is used")
+    void distinctEventsStillWork() throws Exception {
+        validator.authenticate(header("GET", URL, NOW_SEC), "GET", URL);
+
+        // A different created_at yields a different event id, which is the ordinary case: each
+        // request signs its own event.
+        assertThat(validator.authenticate(header("GET", URL, NOW_SEC - 1), "GET", URL))
+            .isEqualTo(PUB);
+    }
+
 }
