@@ -2,6 +2,47 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [0.6.0] - 2026-09-06
+
+Security remediation from the 2026-09-05 audit, plus the defects an adversarial review of that
+remediation found. Minor rather than patch: `verify` now fails until issuer keys are configured,
+and operational endpoints require authentication.
+
+### Security
+
+- **A registered issuer key is required before a signature is called valid** (audit H-12).
+
+- **NIP-98 auth events are single-use, and operational endpoints are gated** (audit M-25, L-28).
+  `/actuator/prometheus`, `/v3/api-docs` and `/swagger-ui` were reachable unauthenticated.
+
+- **The operational endpoint filter matches the context-relative path.** It compared
+  `getRequestURI()`, which includes the context path, so under any non-root
+  `server.servlet.context-path` every prefix missed and the filter permitted everything while
+  remaining registered and appearing to work.
+
+- **The nsec field is cleared on failed login and store permissions are restricted** (audit L-25,
+  L-29).
+
+### Fixed
+
+- **The issuer key registry is configurable.** `IssuerAttestationConfig` was constructed as
+  `empty()` at all nine CLI call sites and the sole web bean, with no property, option or binding
+  anywhere, so every `verify` invocation exited non-zero with no supported remedy: not fail-closed
+  but fail-always, and a silent break for any CI job gating on that exit code. Adds
+  `--issuer-key <id>=<hex>` and `ledger.web.issuer-keys.<id>`, with a startup warning when empty.
+
+- **A 2.4%-per-run flake in the session envelope test.** It asserted that the two-character
+  password `pw` did not appear in roughly a hundred positions of random base64.
+
+### Changed
+
+- **`cashu-voucher` 0.10.0 -> 0.14.0, `cashu-lib-crypto` 0.21.0 -> 0.30.0, `cashu-wallet-client`
+  0.6.4 -> 0.8.0** (audit L-36). The ledger held three separate stale pins, and the effect was
+  worse than being behind: `cashu-lib-common` and `-entities` resolved to 0.30.0 through the
+  voucher while `-crypto` stayed at 0.21.0, so the modules carrying the constant-time scalar
+  multiplication and the on-curve key check were nine minor versions older than the ones calling
+  them. All three now resolve 0.30.0.
+
 ## [Unreleased]
 
 ## [0.5.0] - 2026-08-31
