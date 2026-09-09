@@ -38,6 +38,37 @@ public class TracePublisherAutoConfiguration {
         return new SqliteOutboxStore(properties.getOutboxJdbcUrl());
     }
 
+    /**
+     * Registers the spec-048 publisher meters when Micrometer is on the
+     * classpath and a registry exists.
+     *
+     * <p>Nested so the {@code @ConditionalOnClass} guard is evaluated against
+     * the nested class rather than the enclosing auto-configuration: a
+     * consumer without Micrometer (or without actuator) keeps the whole
+     * publisher stack, minus the meters.
+     */
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnClass(
+            io.micrometer.core.instrument.MeterRegistry.class)
+    @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
+    static class MetricsConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean
+        TracePublisherMetrics tracePublisherMetrics(
+                org.springframework.beans.factory.ObjectProvider<io.micrometer.core.instrument.MeterRegistry> registries,
+                OutboxStore outbox,
+                org.springframework.core.env.Environment env) {
+
+            io.micrometer.core.instrument.MeterRegistry registry = registries.getIfAvailable();
+            if (registry == null) {
+                return null;
+            }
+            return new TracePublisherMetrics(registry, outbox,
+                    env.getProperty("ENVIRONMENT", "local"),
+                    env.getProperty("spring.application.name", "unknown"));
+        }
+    }
+
     @Bean
     @ConditionalOnMissingBean
     public TraceEventSigner traceEventSigner(TracePublisherProperties properties) {
@@ -77,8 +108,27 @@ public class TracePublisherAutoConfiguration {
 
     @Bean(destroyMethod = "close")
     @ConditionalOnMissingBean
-    public OutboxDispatcher traceOutboxDispatcher(OutboxStore outbox, RelayPublisher relayPublisher) {
+    public OutboxDispatcher traceOutboxDispatcher(
+            OutboxStore outbox,
+            RelayPublisher relayPublisher,
+            org.springframework.beans.factory.ObjectProvider<TracePublisherMetrics> metrics) {
         OutboxDispatcher dispatcher = OutboxDispatcher.create(outbox, relayPublisher);
+        // Optional: absent when Micrometer is not on the classpath, in which
+        // case the dispatcher keeps its no-op listener.
+        TracePublisherMetrics publisherMetrics = metrics.getIfAvailable();
+        if (publisherMetrics != null) {
+            dispatcher.setOutcomeListener(new OutboxDispatcher.PublishOutcomeListener() {
+                @Override
+                public void onSuccess() {
+                    publisherMetrics.recordPublishSuccess();
+                }
+
+                @Override
+                public void onFailure() {
+                    publisherMetrics.recordPublishError();
+                }
+            });
+        }
         dispatcher.start();
         return dispatcher;
     }

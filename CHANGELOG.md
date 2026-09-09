@@ -2,6 +2,102 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [0.6.0] - 2026-09-06
+
+Security remediation from the 2026-09-05 audit, plus the defects an adversarial review of that
+remediation found. Minor rather than patch: `verify` now fails until issuer keys are configured,
+and operational endpoints require authentication.
+
+### Security
+
+- **A registered issuer key is required before a signature is called valid** (audit H-12).
+
+- **NIP-98 auth events are single-use, and operational endpoints are gated** (audit M-25, L-28).
+  `/actuator/prometheus`, `/v3/api-docs` and `/swagger-ui` were reachable unauthenticated.
+
+- **The operational endpoint filter matches the context-relative path.** It compared
+  `getRequestURI()`, which includes the context path, so under any non-root
+  `server.servlet.context-path` every prefix missed and the filter permitted everything while
+  remaining registered and appearing to work.
+
+- **The nsec field is cleared on failed login and store permissions are restricted** (audit L-25,
+  L-29).
+
+### Fixed
+
+- **The issuer key registry is configurable.** `IssuerAttestationConfig` was constructed as
+  `empty()` at all nine CLI call sites and the sole web bean, with no property, option or binding
+  anywhere, so every `verify` invocation exited non-zero with no supported remedy: not fail-closed
+  but fail-always, and a silent break for any CI job gating on that exit code. Adds
+  `--issuer-key <id>=<hex>` and `ledger.web.issuer-keys.<id>`, with a startup warning when empty.
+
+- **A 2.4%-per-run flake in the session envelope test.** It asserted that the two-character
+  password `pw` did not appear in roughly a hundred positions of random base64.
+
+### Changed
+
+- **`cashu-voucher` 0.10.0 -> 0.14.0, `cashu-lib-crypto` 0.21.0 -> 0.30.0, `cashu-wallet-client`
+  0.6.4 -> 0.8.0** (audit L-36). The ledger held three separate stale pins, and the effect was
+  worse than being behind: `cashu-lib-common` and `-entities` resolved to 0.30.0 through the
+  voucher while `-crypto` stayed at 0.21.0, so the modules carrying the constant-time scalar
+  multiplication and the on-curve key check were nine minor versions older than the ones calling
+  them. All three now resolve 0.30.0.
+
+## [Unreleased]
+
+## [0.5.0] - 2026-08-31
+
+Released as 0.5.0 rather than 0.4.0. The repository's pom said `0.4.0`, but no
+0.4.0 was ever published: reposilite held only 0.3.0, so both 0.3.1 and 0.4.0
+existed as changelog entries and nothing else. Publishing this tree as 0.4.0
+would have shipped an artifact that the 0.4.0 entry below does not describe,
+because the tree has since gained the publisher meters and a cashu-lib-crypto
+jump. Consumers crossing 0.3.0 to here therefore also take 0.3.1's relay-display
+fix and 0.4.0's nsec login, including its removal of NIP-07 sign-in.
+
+### Added
+
+- The spec-048 publisher meters, `gateway_trace_publisher_outbox_depth` and
+  `gateway_trace_publisher_publish_attempts_total`. Three alert rules in
+  imani-deploy already matched on them and neither meter existed, so none could
+  fire. `OutboxDepthAlertTest` drove an in-test counter and asserted the same
+  expression *shape*, which checks the alert logic and nothing about whether a
+  scrape can produce the series.
+
+  Micrometer is an **optional** dependency and the meters sit behind
+  `@ConditionalOnClass`, matching the existing OpenTelemetry decorator, so a
+  consumer without it keeps the whole publisher stack minus the meters.
+  `OutboxDispatcher` reports outcomes through a small `PublishOutcomeListener`
+  rather than taking a metrics dependency of its own.
+
+  **Consumers must upgrade to pick this up.** imani-gateway-customer resolves
+  this module at 0.3.0 through `imani-bom`, so the meters arrive there only
+  once the BOM advances past this release.
+
+### Changed
+
+- Updated cashu-lib-crypto to 0.21.0 (was 0.9.1).
+
+## [0.4.0] - 2026-06-22
+
+### Added
+
+- **nsec login for the web Transaction Graph** — sign in with your `nsec1…` private key and a password instead of a browser extension. The nsec is encrypted in the browser (WebCrypto PBKDF2-SHA256 + AES-256-GCM) with the password and persisted locally; while unlocked, the in-memory key signs the NIP-98 headers the graph requests require.
+  - Returning visits unlock with the password only; an incorrect password is rejected with the stored credential kept.
+  - Sessions auto-lock after 15 minutes of inactivity, clearing the in-memory key while keeping the stored credential; logout wipes the stored credential and key and locks any other open tabs.
+  - Client-side NIP-19 decoding and NIP-01/BIP-340 signing use the vendored, audited `nostr-tools` bundle; a `node --test` suite covers the crypto envelope and nsec handling and runs under `mvn verify`.
+  - The graph explorer now targets the `/api/v1` trace API by default (decoupled from the voucher `/proxy` base), so searches work without manually changing the API base; still overridable via `data-trace-api-base` or a browser-local setting.
+
+### Removed
+
+- **NIP-07 browser-extension sign-in** for the Transaction Graph — replaced entirely by nsec login. The web UI no longer depends on a `window.nostr` extension being present.
+
+## [0.3.1] - 2026-06-22
+
+### Fixed
+
+- **Ledger web relay display** — the inspection UI relay pill was a hardcoded `wss://relay.imani.casa` literal that ignored configuration. A new `HomeController` now injects the configured `ledger.web.relays` into the page so it reflects the relay the service actually reads from. The stale API-base placeholder was also genericised.
+
 ## [0.3.0] - 2026-06-20
 
 ### Added

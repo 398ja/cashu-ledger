@@ -7,7 +7,7 @@
     <parent>
         <groupId>xyz.tcheeric</groupId>
         <artifactId>cashu-ledger</artifactId>
-        <version>0.3.0</version>
+        <version>0.6.0</version>
     </parent>
 
     <artifactId>cashu-ledger-trace-publisher</artifactId>
@@ -53,6 +53,15 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- Optional: Micrometer, for the outbox-depth and publish-attempt
+             meters the spec-048 alert rules match on. Optional and guarded by
+             @ConditionalOnClass so a non-Spring or non-actuator consumer is
+             unaffected, exactly like the OpenTelemetry decorator below. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
             <optional>true</optional>
         </dependency>
         <!-- Optional: OpenTelemetry tracing decorator (only used when present) -->

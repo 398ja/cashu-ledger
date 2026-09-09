@@ -7,12 +7,17 @@
     <parent>
         <groupId>xyz.tcheeric</groupId>
         <artifactId>cashu-ledger</artifactId>
-        <version>0.3.0</version>
+        <version>0.6.0</version>
     </parent>
 
     <artifactId>cashu-ledger-web</artifactId>
     <name>Cashu Ledger Web</name>
     <description>Spring Boot web application for cashu-ledger</description>
+
+    <properties>
+        <!-- Set -DskipJsTests=true to skip the node-based JS unit suite. -->
+        <skipJsTests>false</skipJsTests>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -75,6 +80,12 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <!-- MockHttpServletRequest, for testing servlet filters without a container. -->
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -83,6 +94,30 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <version>${spring.boot.version}</version>
+            </plugin>
+            <!-- Runs the browser-side JS unit suite (crypto envelope + nsec handling)
+                 under Node's built-in test runner during the test phase. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>js-unit-tests</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>node</executable>
+                            <arguments>
+                                <argument>--test</argument>
+                                <argument>${project.basedir}/src/test/js/</argument>
+                            </arguments>
+                            <skip>${skipJsTests}</skip>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>com.google.cloud.tools</groupId>
