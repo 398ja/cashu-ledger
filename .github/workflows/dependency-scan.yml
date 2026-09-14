@@ -70,9 +70,20 @@ jobs:
       # the current count so ordinary dependency churn never trips it.
       - name: Assert the SBOM actually resolved dependencies
         run: |
+          set -euo pipefail
           test -f target/sbom.json || { echo "::error::No SBOM produced"; exit 1; }
           count=$(python3 -c "import json;print(len(json.load(open('target/sbom.json')).get('components',[])))")
           echo "SBOM components: $count"
+          # An SBOM that exists but will not parse leaves count empty, and `[ "" -lt N ]` fails
+          # with "integer expression expected" rather than failing the step -- so without this the
+          # guard reports success over a file it could not read, which is the failure it exists to
+          # prevent. Caught by testing the guard against a corrupt SBOM rather than only a small one.
+          case "$count" in
+            ''|*[!0-9]*)
+              echo "::error::Could not read a component count from the SBOM."
+              exit 1
+              ;;
+          esac
           if [ "$count" -lt 100 ]; then
             echo "::error::SBOM has only $count components; dependency resolution likely failed."
             echo "::error::Refusing to report a green scan over an unresolved tree (issue #9)."
