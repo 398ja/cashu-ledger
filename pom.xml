@@ -99,6 +99,21 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- CVE-2025-12543 (CRITICAL): undertow-core 2.3.18.Final arrives test-scoped and
+                 transitively via org.testcontainers:testcontainers 1.21.4, which pins a version
+                 carrying the advisory. Overriding it here is the only lever this repository has,
+                 since nothing declares undertow directly. Declared BEFORE the BOM imports because
+                 the first declaration in dependencyManagement wins.
+
+                 Test scope, so it is not shipped and not reachable by a deployed ledger, but it
+                 runs in CI and on developer machines, and it is precisely what includeTestScope
+                 in the SBOM exists to surface. Remove this once Testcontainers ships a release
+                 that pulls a fixed undertow. -->
+            <dependency>
+                <groupId>io.undertow</groupId>
+                <artifactId>undertow-core</artifactId>
+                <version>2.3.21.Final</version>
+            </dependency>
             <!-- imani-bom first: in dependencyManagement the FIRST declaration wins, so
                  importing it ahead of spring-boot-dependencies is what lets it set the
                  estate's shared versions. It also carries Spring Boot itself (3.5.16 here,
