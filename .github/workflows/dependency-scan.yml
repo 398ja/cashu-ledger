@@ -29,9 +29,9 @@ name: Dependency vulnerability scan
 
 on:
   push:
-    branches: [main, develop]
+    branches: [master, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [master, develop]
   schedule:
     # Weekly, because a dependency does not have to change for it to become vulnerable: most
     # findings arrive as new advisories against versions that were already pinned.
