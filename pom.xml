@@ -29,7 +29,7 @@
 
         <nostr-java.version>2.0.7</nostr-java.version>
         <nostrdb-jni.version>0.3.0</nostrdb-jni.version>
-        <cashu-voucher.version>0.14.0</cashu-voucher.version>
+        <imani-bom.version>0.1.77</imani-bom.version>
         <picocli.version>4.7.6</picocli.version>
         <slf4j.version>2.0.17</slf4j.version>
         <logback.version>1.5.34</logback.version>
@@ -99,6 +99,25 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- imani-bom first: in dependencyManagement the FIRST declaration wins, so
+                 importing it ahead of spring-boot-dependencies is what lets it set the
+                 estate's shared versions. It also carries Spring Boot itself (3.5.16 here,
+                 against the 3.5.9 this repo pinned by hand), so Boot's own managed versions
+                 still arrive — one hop further along.
+
+                 This import replaces a hand-maintained cashu-voucher pin that had drifted to
+                 0.14.0, a version that was NEVER PUBLISHED: the reposilite line runs
+                 0.13.0 -> 0.14.1 -> 0.14.2. That is why `build` and `scan` are red on master
+                 and have been since 0ff3fb5, for a reason no code change here could fix. A
+                 version this repository maintains alone is a version that can point at
+                 nothing and still look deliberate. -->
+            <dependency>
+                <groupId>xyz.tcheeric</groupId>
+                <artifactId>imani-bom</artifactId>
+                <version>${imani-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
@@ -138,11 +157,6 @@
                 <groupId>xyz.tcheeric</groupId>
                 <artifactId>nostrdb-jni</artifactId>
                 <version>${nostrdb-jni.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>xyz.tcheeric</groupId>
-                <artifactId>cashu-voucher-domain</artifactId>
-                <version>${cashu-voucher.version}</version>
             </dependency>
             <dependency>
                 <groupId>info.picocli</groupId>
