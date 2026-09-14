@@ -126,9 +126,14 @@
                         </goals>
                         <configuration>
                             <executable>node</executable>
+                            <!-- A GLOB, not the directory. `node --test <dir>` scans on
+                                 Node 20 but on Node 22 resolves the path as a module and
+                                 dies with MODULE_NOT_FOUND, so this passed locally and
+                                 failed on a runner that had moved to 22. The glob is what
+                                 both versions agree on. -->
                             <arguments>
                                 <argument>--test</argument>
-                                <argument>${project.basedir}/src/test/js/</argument>
+                                <argument>${project.basedir}/src/test/js/*.test.mjs</argument>
                             </arguments>
                             <skip>${skipJsTests}</skip>
                         </configuration>
