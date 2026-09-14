@@ -1,5 +1,6 @@
 package xyz.tcheeric.cashu.ledger.web.config;
 
+import org.springframework.boot.actuate.autoconfigure.security.servlet.EndpointRequest;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -68,7 +69,36 @@ public class SecurityConfig {
                 // everything. The operational endpoints are gated by
                 // OperationalEndpointFilter instead, which reads the same principal the rest of
                 // this application does (audit L-28).
-                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+                // AppSec finding M-1 (issue #8). This used to be anyRequest().permitAll(), with
+                // every access decision made inside a handler: TraceAdminController calls
+                // requireAdmin, TraceController throws from its principal() helper when the
+                // request attribute is absent. Both fail closed today, and Nip98AuthenticationFilter
+                // already rejects unauthenticated requests to /api/v1/trace before they reach a
+                // controller, so this was never an open door.
+                //
+                // What was missing is that the boundary was not stated where authorization is
+                // configured. It lived in a filter's path prefix and in per-handler throws, so an
+                // admin route added under a different prefix -- or the prefix being renamed --
+                // would be unauthenticated with nothing failing to compile or to test. Stating it
+                // here makes the intent reviewable in one place, and keeps the filter and the
+                // in-handler checks as defence in depth rather than as the only defence.
+                .authorizeHttpRequests(auth -> auth
+                        // The trace surface. The filter already gates this prefix; saying so again
+                        // means a future change to shouldNotFilter cannot silently open it.
+                        .requestMatchers("/api/v1/trace/admin/**").hasAuthority("trace:admin")
+                        .requestMatchers("/api/v1/trace/**").authenticated()
+                        // Deliberately public: voucher inspection is the ledger's reason to exist,
+                        // and ProxyController despite its name is not a forwarder -- it delegates
+                        // to the same local VoucherLedgerService as /api/v1/vouchers/*.
+                        .requestMatchers("/api/v1/vouchers/**", "/api/v1/unclaimed/**",
+                                "/api/v1/watch/**", "/proxy/**").permitAll()
+                        // The login page and its static assets, plus health probes.
+                        .requestMatchers("/", "/index.html", "/assets/**", "/favicon.ico").permitAll()
+                        .requestMatchers(EndpointRequest.to("health", "info")).permitAll()
+                        // Anything not named above is a route nobody has classified. Denying it is
+                        // the safe reading, and it is what turns "we forgot" into a visible 401
+                        // rather than an open endpoint.
+                        .anyRequest().authenticated())
                 .addFilterBefore(nip98Filter, UsernamePasswordAuthenticationFilter.class)
                 // After the NIP-98 filter, so the principal it resolves is visible here.
                 .addFilterAfter(new OperationalEndpointFilter(), Nip98AuthenticationFilter.class);
