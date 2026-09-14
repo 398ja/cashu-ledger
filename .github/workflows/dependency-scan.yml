@@ -91,6 +91,7 @@ jobs:
           fi
 
       - name: Scan for vulnerabilities
+        id: vulnerability_scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'sbom'
@@ -127,7 +128,30 @@ jobs:
         # Not on pull requests from forks: security-events: write is not granted there whatever
         # the workflow asks for, so the step can only fail. The push and schedule runs cover the
         # same code.
+        #
+        # continue-on-error because this repository is PRIVATE and code scanning needs GitHub
+        # Advanced Security, so the upload returns "Resource not accessible by integration" and
+        # can never succeed here. Without it the scan job is permanently red on master while the
+        # scan itself passes -- a check that cannot go green, which is worse than no check.
+        #
+        # Scoped to the private case deliberately. The sibling cashu-vault added this same flag
+        # and then correctly REVERTED it (398ja/cashu-vault#139) once that repository went public:
+        # there the upload can succeed, so swallowing a failure would hide the Security tab
+        # quietly ceasing to update. Revert this hunk if this repository is ever made public.
+        continue-on-error: true
         if: always() && github.event_name != 'pull_request'
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
+
+      # The upload may fail; the scan may not. Keyed on the scan step's outcome rather than on the
+      # SARIF file, because the file is not written where the action's `output:` suggests.
+      - name: Confirm the scan itself succeeded
+        if: always()
+        run: |
+          echo "Blocking scan outcome: ${{ steps.vulnerability_scan.outcome }}"
+          if [ "${{ steps.vulnerability_scan.outcome }}" != "success" ]; then
+            echo "::error::The vulnerability scan did not succeed; the SARIF upload being"
+            echo "::error::optional must not mask that."
+            exit 1
+          fi
