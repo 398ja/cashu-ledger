@@ -2,6 +2,38 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [0.7.0] - 2026-09-14
+
+Two findings from the 2026-09-13 AppSec review of the estate.
+
+**Minor, not patch: the filter chain now states its authorization boundary**, and denies anything
+nobody has classified. A route added under an unclassified prefix is now refused rather than
+silently public.
+
+### Security
+
+- **The authorization boundary was not written where authorization is configured.** The chain
+  said `anyRequest().permitAll()`, with every access decision made inside a handler. This was
+  never an open door — `Nip98AuthenticationFilter` rejects unauthenticated requests to
+  `/api/v1/trace` before a controller sees them, and both handlers fail closed — which is why the
+  finding was downgraded to Low once measured.
+
+  What was missing is that the boundary lived in a filter's path prefix and in per-handler
+  throws, so an admin route added under a different prefix, or the prefix being renamed, would be
+  unauthenticated with nothing failing to compile or to test. The chain now states it:
+  `trace:admin` for the admin surface, `authenticated` for the rest of the trace prefix, explicit
+  `permitAll` for the public voucher reads and the login page, and **deny for anything nobody has
+  classified**.
+
+  That last rule required a real change. `Nip98AuthenticationFilter` published its principal only
+  as a request attribute, never to Spring's `SecurityContext`, so `.authenticated()` would have
+  rejected even a validly signed request. It now sets an `Authentication` with authorities named
+  after `TraceAuthority`, which is what lets the chain express the rule at all.
+
+- **Dependabot alerts were disabled.** Enabling them surfaced 6, including a runtime
+  `logback-core` cluster. `logback.version` 1.5.18 -> 1.5.34 clears all four of those. The
+  CRITICAL is a false positive: CVE-2026-33634 needs `trivy-action` < 0.35.0.
+
 ## [0.6.0] - 2026-09-06
 
 Security remediation from the 2026-09-05 audit, plus the defects an adversarial review of that

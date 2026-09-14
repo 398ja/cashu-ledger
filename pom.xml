@@ -6,7 +6,7 @@
 
     <groupId>xyz.tcheeric</groupId>
     <artifactId>cashu-ledger</artifactId>
-    <version>0.6.0</version>
+    <version>0.7.0</version>
     <packaging>pom</packaging>
     <name>Cashu Ledger</name>
     <description>Standalone CLI for inspecting vouchers on Nostr relays</description>
