@@ -126,14 +126,21 @@
                         </goals>
                         <configuration>
                             <executable>node</executable>
-                            <!-- A GLOB, not the directory. `node --test <dir>` scans on
-                                 Node 20 but on Node 22 resolves the path as a module and
-                                 dies with MODULE_NOT_FOUND, so this passed locally and
-                                 failed on a runner that had moved to 22. The glob is what
-                                 both versions agree on. -->
+                            <!-- Run FROM the test directory with no path argument.
+                                 Passing a directory to node's test runner scans it on
+                                 Node 20, but on Node 22 the path is resolved as a module
+                                 and the run dies with MODULE_NOT_FOUND — so this passed
+                                 locally and failed on a runner that had moved to 22.
+
+                                 A glob argument is not the fix either: exec-maven-plugin
+                                 does not go through a shell, so the pattern is passed
+                                 literally and node reports "Could not find '...*.test.mjs'".
+                                 Discovery from the working directory is what both Node
+                                 versions agree on, and it keeps picking up new test files
+                                 the way naming them one by one would not. -->
+                            <workingDirectory>${project.basedir}/src/test/js</workingDirectory>
                             <arguments>
                                 <argument>--test</argument>
-                                <argument>${project.basedir}/src/test/js/*.test.mjs</argument>
                             </arguments>
                             <skip>${skipJsTests}</skip>
                         </configuration>
