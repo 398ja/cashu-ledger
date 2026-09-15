@@ -7,7 +7,7 @@
     <parent>
         <groupId>xyz.tcheeric</groupId>
         <artifactId>cashu-ledger</artifactId>
-        <version>0.7.0</version>
+        <version>0.7.1</version>
     </parent>
 
     <artifactId>cashu-ledger-web</artifactId>

@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [0.7.1] - 2026-09-15
+
+### Security
+
+- **`io.undertow:undertow-core` overridden to 2.3.21.Final** to clear CVE-2025-12543
+  (CRITICAL). It arrives test-scoped and transitively via `testcontainers` 1.21.4, which pins
+  the affected 2.3.18.Final, and nothing here declares undertow directly, so a
+  `dependencyManagement` override is the only lever this repository has. Test scope, so it is
+  not shipped and not reachable by a deployed ledger -- but it runs in CI and on developer
+  machines. Remove the override once Testcontainers ships a release pulling a fixed undertow.
+
+  Found because the dependency scan ran on `master` for the first time: the workflow had been
+  keyed to a `main` branch that does not exist in this repository.
+
+### Fixed
+
+- **Workflow triggers point at `master`.** `dependency-scan`, `enforce_conventional_commits`,
+  `google-java-format` and `qodana` all triggered on `main`, which this repository has never
+  had, so none of them ran on a push to the default branch. The vulnerability scan's only runs
+  came from its weekly schedule.
+- **The SBOM guard no longer depends on the runner's default shell flags**, and the SARIF upload
+  is allowed to fail on this private repository without failing the scan job, while the scan's
+  own outcome is still asserted.
+
 ## [0.7.0] - 2026-09-14
 
 Two findings from the 2026-09-13 AppSec review of the estate.
@@ -74,8 +98,6 @@ and operational endpoints require authentication.
   voucher while `-crypto` stayed at 0.21.0, so the modules carrying the constant-time scalar
   multiplication and the on-curve key check were nine minor versions older than the ones calling
   them. All three now resolve 0.30.0.
-
-## [Unreleased]
 
 ## [0.5.0] - 2026-08-31
 
