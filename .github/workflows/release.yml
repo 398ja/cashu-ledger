@@ -42,14 +42,16 @@ jobs:
       # Fail before building rather than after. Maven treats an unauthenticated upload
       # target as nothing to do and exits 0, which is how a release reports success and
       # ships nothing -- the failure mode this whole workflow exists to end.
-      # MVN_USER or MVN_USERNAME: both spellings exist across this org -- cashu-mint was
-      # provisioned with MVN_USER, later repositories with MVN_USERNAME -- and a release that
-      # fails because a secret is spelled differently is a waste of an outage. Accept either,
-      # and still refuse when neither is set, which is the case that actually matters.
+      # Three spellings of the same credential exist across this org: cashu-mint was
+      # provisioned with MVN_USER, cashu-vault and imani-wallet-lib with MVN_USERNAME, and
+      # imani-bom publishes today using an org-level REPOSILITE_USERNAME. A release that
+      # fails because of which of three names someone typed is a wasted outage, so all three
+      # are accepted -- and the guard still refuses when NONE is set, which is the case that
+      # actually protects anything.
       - name: Verify publish credentials are present
         env:
-          MVN_USER: ${{ secrets.MVN_USER || secrets.MVN_USERNAME }}
-          MVN_PASSWORD: ${{ secrets.MVN_PASSWORD }}
+          MVN_USER: ${{ secrets.MVN_USER || secrets.MVN_USERNAME || secrets.REPOSILITE_USERNAME }}
+          MVN_PASSWORD: ${{ secrets.MVN_PASSWORD || secrets.REPOSILITE_PASSWORD }}
         run: |
           if [ -z "${MVN_USER}" ] || [ -z "${MVN_PASSWORD}" ]; then
             echo "::error::MVN_USER/MVN_PASSWORD are not set on this repository."
@@ -110,8 +112,8 @@ jobs:
       # and a signing key that is configured but unused fails the build for no benefit.
       - name: Build and deploy to Reposilite
         env:
-          MVN_USER: ${{ secrets.MVN_USER || secrets.MVN_USERNAME }}
-          MVN_PASSWORD: ${{ secrets.MVN_PASSWORD }}
+          MVN_USER: ${{ secrets.MVN_USER || secrets.MVN_USERNAME || secrets.REPOSILITE_USERNAME }}
+          MVN_PASSWORD: ${{ secrets.MVN_PASSWORD || secrets.REPOSILITE_PASSWORD }}
         run: mvn -B -U clean deploy -Dgpg.skip=true
 
       # The gate. Without it, "the workflow is green" and "the artifacts exist" remain two
