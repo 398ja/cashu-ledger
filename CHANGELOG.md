@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [0.7.2] - 2026-09-22
+
+### Security
+
+- **BouncyCastle 1.84 -> 1.85 for CVE-2026-8763 (CRITICAL)**, via `imani-bom` 0.1.97.
+  X.509 Name Constraints can be bypassed with a trailing dot in an `rfc822Name` or URI, so a
+  certificate can assert a name the constraint exists to forbid. Verified with
+  `dependency:tree` rather than by reading the pom.
+
+### Changed
+
+- `imani-bom` 0.1.77 -> 0.1.97. A twenty-version jump, so this release carries whatever else
+  that range changed; the full suite passes on it.
+
 ## [0.7.1] - 2026-09-15
 
 ### Security
