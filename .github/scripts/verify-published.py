@@ -39,11 +39,27 @@ NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 BASE = "https://maven.398ja.xyz/releases/xyz/tcheeric"
 
 
+def deploy_skipped(root):
+    """True when this module sets maven.deploy.skip, i.e. mvn deploy will not push it.
+
+    Only the module's own <properties> is read, never an inherited value. A parent
+    that set this globally would mean the whole reactor publishes nothing, which is
+    a broken release rather than something to quietly treat as expected.
+    """
+    value = root.findtext("m:properties/m:maven.deploy.skip", namespaces=NS)
+    return (value or "").strip().lower() == "true"
+
+
 def reactor_artifacts(pom="pom.xml"):
-    """Every artifactId the reactor builds, root first, depth-first."""
+    """Every artifactId the reactor builds with (artifactId, expected_to_publish).
+
+    A module that sets maven.deploy.skip is still yielded rather than dropped: it
+    gets reported on, so a module that silently starts publishing again is visible
+    instead of unnoticed.
+    """
     root = ET.parse(pom).getroot()
     here = os.path.dirname(pom)
-    yield root.findtext("m:artifactId", namespaces=NS)
+    yield root.findtext("m:artifactId", namespaces=NS), not deploy_skipped(root)
     for module in root.findall("m:modules/m:module", NS):
         yield from reactor_artifacts(os.path.join(here, module.text, "pom.xml"))
 
@@ -70,21 +86,32 @@ def main():
         print("::error::no reactor modules found; refusing to report success")
         return 1
 
-    print(f"verifying {len(artifacts)} reactor modules at {version}")
+    expected = [a for a, publishes in artifacts if publishes]
+    if not expected:
+        print("::error::every module skips deploy; refusing to report success")
+        return 1
+
+    print(f"verifying {len(expected)} publishable modules at {version} "
+          f"({len(artifacts) - len(expected)} skip deploy)")
     failed = 0
-    for artifact in artifacts:
+    for artifact, publishes in artifacts:
         url = f"{BASE}/{artifact}/{version}/{artifact}-{version}.pom"
         status = resolves(url)
-        if status == 200:
+        if not publishes:
+            # Not an error either way: this module opted out of deploy. Report what
+            # is actually there so an unexpected publish is visible in the log.
+            state = "present" if status == 200 else "absent"
+            print(f"  skip  {artifact} (deploy skipped, {state})")
+        elif status == 200:
             print(f"  ok    {artifact}")
         else:
             print(f"::error::{artifact} {version} not published (HTTP {status}) {url}")
             failed += 1
 
     if failed:
-        print(f"::error::{failed} of {len(artifacts)} modules did not publish")
+        print(f"::error::{failed} of {len(expected)} publishable modules did not publish")
         return 1
-    print(f"all {len(artifacts)} modules resolve at {version}")
+    print(f"all {len(expected)} publishable modules resolve at {version}")
     return 0
 
 
