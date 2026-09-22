@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [0.7.3] - 2026-09-22
+
+### Fixed
+
+- **`imani-bom` 0.1.97 -> 0.1.98.** 0.1.97 pinned `imani-wallet.version` to 0.3.2, a version
+  that was never published to Reposilite. Nothing noticed because the only module that pulls
+  `wallet-core-cashu` is a test harness, so the phantom pin stayed invisible until a release
+  tried to resolve it. 0.1.98 pins 0.3.3, which is published.
+
+- **Test-harness modules are no longer deployed.** `cashu-ledger-e2e-tests` and
+  `cashu-ledger-integration-tests` now set `maven.deploy.skip`. They have no consumers inside
+  or outside this repo, but deploying them meant their *test-scoped* dependencies had to
+  resolve during `mvn deploy` - so an unpublished test dependency could fail the release after
+  every real artifact had already been pushed.
+
+### Notes for operators
+
+- **0.7.2 is half-released and must not be used.** The 0.7.2 release pushed six of seven
+  modules to Reposilite before failing on `cashu-ledger-e2e-tests`. Reposilite releases are
+  immutable, so those artifacts cannot be withdrawn or overwritten; 0.7.3 supersedes them.
+  Anything pinned to 0.7.2 resolves a real but incompletely released version - move to 0.7.3.
+
 ## [0.7.2] - 2026-09-22
 
 ### Security

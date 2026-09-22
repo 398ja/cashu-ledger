@@ -7,12 +7,22 @@
     <parent>
         <groupId>xyz.tcheeric</groupId>
         <artifactId>cashu-ledger</artifactId>
-        <version>0.7.2</version>
+        <version>0.7.3</version>
     </parent>
 
     <artifactId>cashu-ledger-e2e-tests</artifactId>
     <name>Cashu Ledger E2E Tests</name>
     <packaging>jar</packaging>
+
+    <properties>
+        <!-- This module is a test harness with no consumers: nothing outside this
+             repo depends on it. Deploying it meant its test-scoped dependencies
+             had to resolve at release time, so an unpublished test dep could fail
+             the release AFTER every real artifact was already pushed - and
+             Reposilite releases are immutable, leaving a half-released version.
+             Not deploying it keeps the release gated only on shipped artifacts. -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
 
     <dependencies>
         <dependency>
