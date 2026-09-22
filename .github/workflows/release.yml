@@ -1,0 +1,131 @@
+name: Release
+
+# Publishes to Reposilite (maven.398ja.xyz), which is where distributionManagement points.
+# NOT Maven Central: nothing in this estate is published there.
+#
+# cashu-ledger had no publish workflow at all, so every release was a tag with
+# no artifact behind it.
+#
+# Modelled on cashu-vault's restored workflow. The parts that matter:
+#
+#   * refuses to start without credentials, because an unauthenticated deploy exits 0 and
+#     ships nothing -- a release that reports success and publishes nothing
+#   * checks the tag against the root pom, and every module against the root
+#   * AFTER deploying, requires HTTP 200 for every reactor module, so a green run means
+#     the artifacts actually resolve rather than that the build did not crash
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish and verify, e.g. 0.12.4'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Fail before building rather than after. Maven treats an unauthenticated upload
+      # target as nothing to do and exits 0, which is how a release reports success and
+      # ships nothing -- the failure mode this whole workflow exists to end.
+      # MVN_USER or MVN_USERNAME: both spellings exist across this org -- cashu-mint was
+      # provisioned with MVN_USER, later repositories with MVN_USERNAME -- and a release that
+      # fails because a secret is spelled differently is a waste of an outage. Accept either,
+      # and still refuse when neither is set, which is the case that actually matters.
+      - name: Verify publish credentials are present
+        env:
+          MVN_USER: ${{ secrets.MVN_USER || secrets.MVN_USERNAME }}
+          MVN_PASSWORD: ${{ secrets.MVN_PASSWORD }}
+        run: |
+          if [ -z "${MVN_USER}" ] || [ -z "${MVN_PASSWORD}" ]; then
+            echo "::error::MVN_USER/MVN_PASSWORD are not set on this repository."
+            echo "::error::The deploy would publish nothing and still report success."
+            echo "::error::cashu-mint uses these same names; add them under"
+            echo "::error::Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Check the tag matches the pom version
+        env:
+          VERSION: ${{ inputs.version || github.ref_name }}
+        run: |
+          want="${VERSION#v}"
+          # Read the version from the XML rather than asking Maven. help:evaluate has to
+          # build an effective model, which means resolving whatever the pom imports -- and
+          # this step runs BEFORE settings.xml is written, so on a private-registry project
+          # it can fail for want of credentials and print its error into the captured
+          # stdout, reporting a credentials problem as a version mismatch.
+          #
+          # This pom imports no BOM, so it happens to work today. imani-wallet-lib's
+          # identical step did not, which is the only reason the difference was noticed.
+          have=$(python3 -c "import xml.etree.ElementTree as ET; print(ET.parse('pom.xml').getroot().findtext('{http://maven.apache.org/POM/4.0.0}version'))")
+          if [ "${want}" != "${have}" ]; then
+            echo "::error::tag says ${want} but the root pom says ${have}"
+            exit 1
+          fi
+          echo "releasing ${have}"
+
+      # The step above reads only the ROOT pom, so a root-only bump would pass it while
+      # leaving the modules behind.
+      - name: Check every module is at the root version
+        run: python3 .github/scripts/check-module-versions.py
+
+      - name: Configure Maven settings
+        run: |
+          mkdir -p "${HOME}/.m2"
+          cat <<'EOF' > "${HOME}/.m2/settings.xml"
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <servers>
+              <server>
+                <id>reposilite-releases</id>
+                <username>${env.MVN_USER}</username>
+                <password>${env.MVN_PASSWORD}</password>
+              </server>
+              <server>
+                <id>reposilite-snapshots</id>
+                <username>${env.MVN_USER}</username>
+                <password>${env.MVN_PASSWORD}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+
+      # gpg.skip matches how cashu-mint releases: Reposilite does not require signatures,
+      # and a signing key that is configured but unused fails the build for no benefit.
+      - name: Build and deploy to Reposilite
+        env:
+          MVN_USER: ${{ secrets.MVN_USER || secrets.MVN_USERNAME }}
+          MVN_PASSWORD: ${{ secrets.MVN_PASSWORD }}
+        run: mvn -B -U clean deploy -Dgpg.skip=true
+
+      # The gate. Without it, "the workflow is green" and "the artifacts exist" remain two
+      # different statements, which is precisely how 0.12.2 through 0.12.4 went missing
+      # without anyone noticing for seven months.
+      - name: Verify the artifacts are resolvable
+        env:
+          VERSION: ${{ inputs.version || github.ref_name }}
+        run: python3 .github/scripts/verify-published.py
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
