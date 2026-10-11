@@ -1,110 +1,108 @@
 package xyz.tcheeric.cashu.ledger.web.config;
 
-import org.springframework.boot.context.properties.ConfigurationProperties;
-
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "ledger.web")
 public class WebLedgerProperties {
-    private List<String> relays = List.of("wss://relay.imani.casa");
-    private Duration timeout = Duration.ofSeconds(30);
-    private Duration cacheTtl = Duration.ofSeconds(30);
-    private StorageProperties storage = new StorageProperties();
-    /**
-     * Issuer id to public key, the trust anchor that lets verify() report signatureValid=true.
-     *
-     * <p>Empty means no issuer can be attested, so every voucher verifies as untrusted. That is
-     * the honest answer with nothing to check against, but it is only a safe default if it can
-     * actually be changed — configure as {@code ledger.web.issuer-keys.<id>: <hex pubkey>}.
-     */
-    private Map<String, String> issuerKeys = new LinkedHashMap<>();
+  private List<String> relays = List.of("wss://relay.imani.casa");
+  private Duration timeout = Duration.ofSeconds(30);
+  private Duration cacheTtl = Duration.ofSeconds(30);
+  private StorageProperties storage = new StorageProperties();
 
-    public Map<String, String> getIssuerKeys() {
-        return issuerKeys;
+  /**
+   * Issuer id to public key, the trust anchor that lets verify() report signatureValid=true.
+   *
+   * <p>Empty means no issuer can be attested, so every voucher verifies as untrusted. That is the
+   * honest answer with nothing to check against, but it is only a safe default if it can actually
+   * be changed — configure as {@code ledger.web.issuer-keys.<id>: <hex pubkey>}.
+   */
+  private Map<String, String> issuerKeys = new LinkedHashMap<>();
+
+  public Map<String, String> getIssuerKeys() {
+    return issuerKeys;
+  }
+
+  public void setIssuerKeys(Map<String, String> issuerKeys) {
+    this.issuerKeys = issuerKeys == null ? new LinkedHashMap<>() : issuerKeys;
+  }
+
+  public List<String> getRelays() {
+    return relays;
+  }
+
+  public void setRelays(List<String> relays) {
+    this.relays = relays;
+  }
+
+  public Duration getTimeout() {
+    return timeout;
+  }
+
+  public void setTimeout(Duration timeout) {
+    this.timeout = timeout;
+  }
+
+  public Duration getCacheTtl() {
+    return cacheTtl;
+  }
+
+  public void setCacheTtl(Duration cacheTtl) {
+    this.cacheTtl = cacheTtl;
+  }
+
+  public StorageProperties getStorage() {
+    return storage;
+  }
+
+  public void setStorage(StorageProperties storage) {
+    this.storage = storage;
+  }
+
+  /** Configuration properties for the local event store. */
+  public static class StorageProperties {
+    private boolean enabled = false;
+    private String path;
+    private long maxSizeBytes = 512L * 1024 * 1024; // 512MB
+    private Duration eventTtl = Duration.ofDays(30);
+
+    public boolean isEnabled() {
+      return enabled;
     }
 
-    public void setIssuerKeys(Map<String, String> issuerKeys) {
-        this.issuerKeys = issuerKeys == null ? new LinkedHashMap<>() : issuerKeys;
+    public void setEnabled(boolean enabled) {
+      this.enabled = enabled;
     }
 
-    public List<String> getRelays() {
-        return relays;
+    public String getPath() {
+      if (path == null || path.isBlank()) {
+        return Path.of(System.getProperty("user.home"), ".cashu-ledger", "ndb").toString();
+      }
+      return path;
     }
 
-    public void setRelays(List<String> relays) {
-        this.relays = relays;
+    public void setPath(String path) {
+      this.path = path;
     }
 
-    public Duration getTimeout() {
-        return timeout;
+    public long getMaxSizeBytes() {
+      return maxSizeBytes;
     }
 
-    public void setTimeout(Duration timeout) {
-        this.timeout = timeout;
+    public void setMaxSizeBytes(long maxSizeBytes) {
+      this.maxSizeBytes = maxSizeBytes;
     }
 
-    public Duration getCacheTtl() {
-        return cacheTtl;
+    public Duration getEventTtl() {
+      return eventTtl;
     }
 
-    public void setCacheTtl(Duration cacheTtl) {
-        this.cacheTtl = cacheTtl;
+    public void setEventTtl(Duration eventTtl) {
+      this.eventTtl = eventTtl;
     }
-
-    public StorageProperties getStorage() {
-        return storage;
-    }
-
-    public void setStorage(StorageProperties storage) {
-        this.storage = storage;
-    }
-
-    /**
-     * Configuration properties for the local event store.
-     */
-    public static class StorageProperties {
-        private boolean enabled = false;
-        private String path;
-        private long maxSizeBytes = 512L * 1024 * 1024; // 512MB
-        private Duration eventTtl = Duration.ofDays(30);
-
-        public boolean isEnabled() {
-            return enabled;
-        }
-
-        public void setEnabled(boolean enabled) {
-            this.enabled = enabled;
-        }
-
-        public String getPath() {
-            if (path == null || path.isBlank()) {
-                return Path.of(System.getProperty("user.home"), ".cashu-ledger", "ndb").toString();
-            }
-            return path;
-        }
-
-        public void setPath(String path) {
-            this.path = path;
-        }
-
-        public long getMaxSizeBytes() {
-            return maxSizeBytes;
-        }
-
-        public void setMaxSizeBytes(long maxSizeBytes) {
-            this.maxSizeBytes = maxSizeBytes;
-        }
-
-        public Duration getEventTtl() {
-            return eventTtl;
-        }
-
-        public void setEventTtl(Duration eventTtl) {
-            this.eventTtl = eventTtl;
-        }
-    }
+  }
 }

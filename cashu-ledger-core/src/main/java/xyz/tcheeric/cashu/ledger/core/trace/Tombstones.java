@@ -8,8 +8,8 @@ package xyz.tcheeric.cashu.ledger.core.trace;
 @FunctionalInterface
 public interface Tombstones {
 
-    /** No events are tombstoned. */
-    Tombstones NONE = eventId -> false;
+  /** No events are tombstoned. */
+  Tombstones NONE = eventId -> false;
 
-    boolean isTombstoned(String eventId);
+  boolean isTombstoned(String eventId);
 }

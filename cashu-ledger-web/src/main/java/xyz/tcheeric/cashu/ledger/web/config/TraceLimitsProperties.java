@@ -11,9 +11,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "trace.limits")
 public class TraceLimitsProperties {
 
-    /** Maximum nodes a walk or visualisation may return, regardless of the requested limit. */
-    private int maxWalkNodes = 1000;
+  /** Maximum nodes a walk or visualisation may return, regardless of the requested limit. */
+  private int maxWalkNodes = 1000;
 
-    /** Maximum page size for listing endpoints, regardless of the requested limit. */
-    private int maxPageLimit = 1000;
+  /** Maximum page size for listing endpoints, regardless of the requested limit. */
+  private int maxPageLimit = 1000;
 }

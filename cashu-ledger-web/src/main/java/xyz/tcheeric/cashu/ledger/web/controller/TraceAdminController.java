@@ -23,90 +23,91 @@ import xyz.tcheeric.cashu.ledger.web.trace.TraceAccessAuditSink;
 
 /**
  * Admin surface for the trace ledger (design §7.2 / §5.4), gated by the {@code trace:admin}
- * authority: redaction-key registration/listing/verification (keys held only as ciphertext),
- * the read-access audit log captured per FR-031, and index health. The sensitive key
- * operations are additionally rate-limited per instance.
+ * authority: redaction-key registration/listing/verification (keys held only as ciphertext), the
+ * read-access audit log captured per FR-031, and index health. The sensitive key operations are
+ * additionally rate-limited per instance.
  */
 @RestController
 @RequestMapping("/api/v1/trace/admin")
 public class TraceAdminController {
 
-    private static final HexFormat HEX = HexFormat.of();
+  private static final HexFormat HEX = HexFormat.of();
 
-    private final RedactionKeyRegistry redactionKeys;
-    private final TraceAccessAuditSink auditSink;
-    private final TraceEventStore store;
-    private final FixedWindowRateLimiter keyOpsLimiter = new FixedWindowRateLimiter(20, 60_000);
+  private final RedactionKeyRegistry redactionKeys;
+  private final TraceAccessAuditSink auditSink;
+  private final TraceEventStore store;
+  private final FixedWindowRateLimiter keyOpsLimiter = new FixedWindowRateLimiter(20, 60_000);
 
-    public TraceAdminController(RedactionKeyRegistry redactionKeys, TraceAccessAuditSink auditSink,
-                               TraceEventStore store) {
-        this.redactionKeys = redactionKeys;
-        this.auditSink = auditSink;
-        this.store = store;
+  public TraceAdminController(
+      RedactionKeyRegistry redactionKeys, TraceAccessAuditSink auditSink, TraceEventStore store) {
+    this.redactionKeys = redactionKeys;
+    this.auditSink = auditSink;
+    this.store = store;
+  }
+
+  public record RegisterKeyRequest(String keyId, String label, String keyHex) {}
+
+  public record VerifyKeyRequest(String keyHex) {}
+
+  @GetMapping("/redaction-keys")
+  public ResponseEntity<List<RedactionKeyMetadata>> listKeys(HttpServletRequest request) {
+    requireAdmin(request);
+    return ResponseEntity.ok(redactionKeys.list());
+  }
+
+  @PostMapping("/redaction-keys")
+  public ResponseEntity<?> registerKey(
+      HttpServletRequest request, @RequestBody RegisterKeyRequest body) {
+    requireAdmin(request);
+    if (!keyOpsLimiter.tryAcquire()) {
+      return rateLimited();
     }
-
-    public record RegisterKeyRequest(String keyId, String label, String keyHex) {
+    try {
+      RedactionKeyMetadata metadata =
+          redactionKeys.register(
+              body.keyId(), body.label() == null ? "" : body.label(), HEX.parseHex(body.keyHex()));
+      return ResponseEntity.status(HttpStatus.CREATED).body(metadata);
+    } catch (IllegalArgumentException e) {
+      return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
     }
+  }
 
-    public record VerifyKeyRequest(String keyHex) {
+  @PostMapping("/redaction-keys/{id}/verify")
+  public ResponseEntity<?> verifyKey(
+      HttpServletRequest request,
+      @PathVariable("id") String id,
+      @RequestBody VerifyKeyRequest body) {
+    requireAdmin(request);
+    if (!keyOpsLimiter.tryAcquire()) {
+      return rateLimited();
     }
+    boolean verified = redactionKeys.verify(id, HEX.parseHex(body.keyHex()));
+    return ResponseEntity.ok(Map.of("keyId", id, "verified", verified));
+  }
 
-    @GetMapping("/redaction-keys")
-    public ResponseEntity<List<RedactionKeyMetadata>> listKeys(HttpServletRequest request) {
-        requireAdmin(request);
-        return ResponseEntity.ok(redactionKeys.list());
-    }
+  @GetMapping("/access-log")
+  public ResponseEntity<List<TraceAccessAuditSink.AccessEntry>> accessLog(
+      HttpServletRequest request,
+      @RequestParam(name = "limit", required = false, defaultValue = "100") int limit) {
+    requireAdmin(request);
+    return ResponseEntity.ok(auditSink.recent(Math.min(Math.max(limit, 1), 1000)));
+  }
 
-    @PostMapping("/redaction-keys")
-    public ResponseEntity<?> registerKey(HttpServletRequest request,
-                                         @RequestBody RegisterKeyRequest body) {
-        requireAdmin(request);
-        if (!keyOpsLimiter.tryAcquire()) {
-            return rateLimited();
-        }
-        try {
-            RedactionKeyMetadata metadata = redactionKeys.register(
-                    body.keyId(), body.label() == null ? "" : body.label(), HEX.parseHex(body.keyHex()));
-            return ResponseEntity.status(HttpStatus.CREATED).body(metadata);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
+  @GetMapping("/index-status")
+  public ResponseEntity<IndexStatus> indexStatus(HttpServletRequest request) {
+    requireAdmin(request);
+    return ResponseEntity.ok(store.getIndexStatus());
+  }
 
-    @PostMapping("/redaction-keys/{id}/verify")
-    public ResponseEntity<?> verifyKey(HttpServletRequest request, @PathVariable("id") String id,
-                                       @RequestBody VerifyKeyRequest body) {
-        requireAdmin(request);
-        if (!keyOpsLimiter.tryAcquire()) {
-            return rateLimited();
-        }
-        boolean verified = redactionKeys.verify(id, HEX.parseHex(body.keyHex()));
-        return ResponseEntity.ok(Map.of("keyId", id, "verified", verified));
+  private static void requireAdmin(HttpServletRequest request) {
+    Object attr = request.getAttribute(TracePrincipal.ATTRIBUTE);
+    if (!(attr instanceof TracePrincipal principal) || !principal.isAdmin()) {
+      throw new AdminForbiddenException();
     }
+  }
 
-    @GetMapping("/access-log")
-    public ResponseEntity<List<TraceAccessAuditSink.AccessEntry>> accessLog(
-            HttpServletRequest request,
-            @RequestParam(name = "limit", required = false, defaultValue = "100") int limit) {
-        requireAdmin(request);
-        return ResponseEntity.ok(auditSink.recent(Math.min(Math.max(limit, 1), 1000)));
-    }
-
-    @GetMapping("/index-status")
-    public ResponseEntity<IndexStatus> indexStatus(HttpServletRequest request) {
-        requireAdmin(request);
-        return ResponseEntity.ok(store.getIndexStatus());
-    }
-
-    private static void requireAdmin(HttpServletRequest request) {
-        Object attr = request.getAttribute(TracePrincipal.ATTRIBUTE);
-        if (!(attr instanceof TracePrincipal principal) || !principal.isAdmin()) {
-            throw new AdminForbiddenException();
-        }
-    }
-
-    private static ResponseEntity<Object> rateLimited() {
-        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                .body(Map.of("error", "redaction-key operations are rate-limited; retry shortly"));
-    }
+  private static ResponseEntity<Object> rateLimited() {
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        .body(Map.of("error", "redaction-key operations are rate-limited; retry shortly"));
+  }
 }

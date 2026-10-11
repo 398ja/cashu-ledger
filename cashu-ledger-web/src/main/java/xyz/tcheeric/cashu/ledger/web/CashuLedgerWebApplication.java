@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
 public class CashuLedgerWebApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(CashuLedgerWebApplication.class, args);
-    }
+  public static void main(String[] args) {
+    SpringApplication.run(CashuLedgerWebApplication.class, args);
+  }
 }

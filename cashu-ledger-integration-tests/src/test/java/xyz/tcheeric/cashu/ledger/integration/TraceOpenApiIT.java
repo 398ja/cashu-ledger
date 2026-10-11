@@ -23,18 +23,17 @@ import xyz.tcheeric.cashu.ledger.web.CashuLedgerWebApplication;
 @AutoConfigureMockMvc
 class TraceOpenApiIT {
 
-    @Autowired
-    private MockMvc mockMvc;
+  @Autowired private MockMvc mockMvc;
 
-    @MockBean
-    private VoucherLedgerService voucherLedgerService;
+  @MockBean private VoucherLedgerService voucherLedgerService;
 
-    /** The generated spec is served and includes the trace events path and API title. */
-    @Test
-    void shouldGenerateOpenApiSpecWithTracePaths() throws Exception {
-        mockMvc.perform(get("/v3/api-docs"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.info.title").value("Cashu Ledger API"))
-                .andExpect(jsonPath("$.paths['/api/v1/trace/events']").exists());
-    }
+  /** The generated spec is served and includes the trace events path and API title. */
+  @Test
+  void shouldGenerateOpenApiSpecWithTracePaths() throws Exception {
+    mockMvc
+        .perform(get("/v3/api-docs"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.info.title").value("Cashu Ledger API"))
+        .andExpect(jsonPath("$.paths['/api/v1/trace/events']").exists());
+  }
 }

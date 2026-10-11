@@ -21,61 +21,90 @@ import xyz.tcheeric.cashu.ledger.trace.core.TransactionEvent;
  */
 class IndexReconcilerTest {
 
-    private InMemoryRawEventStore rawStore;
-    private SqliteSidecarIndex index;
-    private IndexedTraceEventStore store;
+  private InMemoryRawEventStore rawStore;
+  private SqliteSidecarIndex index;
+  private IndexedTraceEventStore store;
 
-    @BeforeEach
-    void setUp() {
-        rawStore = new InMemoryRawEventStore();
-        index = new SqliteSidecarIndex("jdbc:sqlite::memory:");
-        store = new IndexedTraceEventStore(rawStore, index);
-    }
+  @BeforeEach
+  void setUp() {
+    rawStore = new InMemoryRawEventStore();
+    index = new SqliteSidecarIndex("jdbc:sqlite::memory:");
+    store = new IndexedTraceEventStore(rawStore, index);
+  }
 
-    @AfterEach
-    void tearDown() {
-        index.close();
-    }
+  @AfterEach
+  void tearDown() {
+    index.close();
+  }
 
-    /** A synchronously-projected event leaves the index healthy with no backlog. */
-    @Test
-    void shouldReportHealthyWhenSidecarMatchesRaw() {
-        store.store(StoredEvent.of(event("e1")));
-        IndexReconciler reconciler = new IndexReconciler(store);
+  /** A synchronously-projected event leaves the index healthy with no backlog. */
+  @Test
+  void shouldReportHealthyWhenSidecarMatchesRaw() {
+    store.store(StoredEvent.of(event("e1")));
+    IndexReconciler reconciler = new IndexReconciler(store);
 
-        IndexReconciler.Health health = reconciler.check();
+    IndexReconciler.Health health = reconciler.check();
 
-        assertThat(health.status()).isEqualTo(IndexReconciler.Status.HEALTHY);
-        assertThat(health.pendingEvents()).isZero();
-        assertThat(health.isServable()).isTrue();
-    }
+    assertThat(health.status()).isEqualTo(IndexReconciler.Status.HEALTHY);
+    assertThat(health.pendingEvents()).isZero();
+    assertThat(health.isServable()).isTrue();
+  }
 
-    /** Raw events not yet in the sidecar (e.g. pre-rebuild) make the index lagged and unservable. */
-    @Test
-    void shouldReportLaggedWhenRawAheadOfSidecar() {
-        // Given: an event written to the raw store but not projected to the sidecar
-        rawStore.store(StoredEvent.of(event("e1")));
-        IndexReconciler reconciler = new IndexReconciler(store);
+  /** Raw events not yet in the sidecar (e.g. pre-rebuild) make the index lagged and unservable. */
+  @Test
+  void shouldReportLaggedWhenRawAheadOfSidecar() {
+    // Given: an event written to the raw store but not projected to the sidecar
+    rawStore.store(StoredEvent.of(event("e1")));
+    IndexReconciler reconciler = new IndexReconciler(store);
 
-        IndexReconciler.Health health = reconciler.check();
+    IndexReconciler.Health health = reconciler.check();
 
-        assertThat(health.status()).isEqualTo(IndexReconciler.Status.LAGGED);
-        assertThat(health.pendingEvents()).isEqualTo(1);
-        assertThat(health.isServable()).isFalse();
-    }
+    assertThat(health.status()).isEqualTo(IndexReconciler.Status.LAGGED);
+    assertThat(health.pendingEvents()).isEqualTo(1);
+    assertThat(health.isServable()).isFalse();
+  }
 
-    private static TransactionEvent event(String id) {
-        return new TransactionEvent(
-                Optional.of(id), "op-" + id, OperationKind.SWAP, "https://mint.imani.casa", "sat",
-                Instant.ofEpochSecond(1_700_000_000L), Instant.ofEpochSecond(1_700_000_000L), "pk",
+  private static TransactionEvent event(String id) {
+    return new TransactionEvent(
+        Optional.of(id),
+        "op-" + id,
+        OperationKind.SWAP,
+        "https://mint.imani.casa",
+        "sat",
+        Instant.ofEpochSecond(1_700_000_000L),
+        Instant.ofEpochSecond(1_700_000_000L),
+        "pk",
+        Optional.empty(),
+        List.of(
+            new ProofRef(
+                64,
+                "ks",
+                "02ab",
+                Optional.of("s"),
+                Optional.of("c"),
                 Optional.empty(),
-                List.of(new ProofRef(64, "ks", "02ab", Optional.of("s"), Optional.of("c"),
-                        Optional.empty(), Optional.empty())),
-                List.of(), List.of(), Optional.empty(), Optional.empty(), Optional.empty(),
-                Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(0L),
-                Optional.empty(), Optional.empty(), Optional.empty(), PrivacyMode.FULL,
-                Optional.empty(), Optional.empty(), 1,
-                new NostrEventMetadata(Optional.of(id), 9079, Optional.empty(),
-                        Optional.empty(), Instant.ofEpochSecond(1_700_000_000L)));
-    }
+                Optional.empty())),
+        List.of(),
+        List.of(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.of(0L),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        PrivacyMode.FULL,
+        Optional.empty(),
+        Optional.empty(),
+        1,
+        new NostrEventMetadata(
+            Optional.of(id),
+            9079,
+            Optional.empty(),
+            Optional.empty(),
+            Instant.ofEpochSecond(1_700_000_000L)));
+  }
 }

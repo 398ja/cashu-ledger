@@ -23,36 +23,35 @@ import xyz.tcheeric.cashu.ledger.core.trace.SqliteSidecarIndex;
 @ConditionalOnProperty(prefix = "trace.storage", name = "nostrdb-enabled", havingValue = "true")
 public class TraceIndexReconcileConfig {
 
-    @Bean
-    public PendingIndexReconciler pendingIndexReconciler(RawEventStore rawEventStore,
-                                                         SqliteSidecarIndex index,
-                                                         IndexReconciler indexReconciler) {
-        return new PendingIndexReconciler(rawEventStore, index, indexReconciler);
+  @Bean
+  public PendingIndexReconciler pendingIndexReconciler(
+      RawEventStore rawEventStore, SqliteSidecarIndex index, IndexReconciler indexReconciler) {
+    return new PendingIndexReconciler(rawEventStore, index, indexReconciler);
+  }
+
+  /** Re-projects nostrdb into the sidecar on a fixed delay whenever a backlog is detected. */
+  public static final class PendingIndexReconciler {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(PendingIndexReconciler.class);
+
+    private final RawEventStore rawEventStore;
+    private final SqliteSidecarIndex index;
+    private final IndexReconciler indexReconciler;
+
+    PendingIndexReconciler(
+        RawEventStore rawEventStore, SqliteSidecarIndex index, IndexReconciler indexReconciler) {
+      this.rawEventStore = rawEventStore;
+      this.index = index;
+      this.indexReconciler = indexReconciler;
     }
 
-    /** Re-projects nostrdb into the sidecar on a fixed delay whenever a backlog is detected. */
-    public static final class PendingIndexReconciler {
-
-        private static final Logger LOGGER = LoggerFactory.getLogger(PendingIndexReconciler.class);
-
-        private final RawEventStore rawEventStore;
-        private final SqliteSidecarIndex index;
-        private final IndexReconciler indexReconciler;
-
-        PendingIndexReconciler(RawEventStore rawEventStore, SqliteSidecarIndex index,
-                               IndexReconciler indexReconciler) {
-            this.rawEventStore = rawEventStore;
-            this.index = index;
-            this.indexReconciler = indexReconciler;
-        }
-
-        @Scheduled(fixedDelayString = "${trace.storage.reconcile-delay:PT30S}")
-        public void reconcile() {
-            if (rawEventStore instanceof NostrDbRawEventStore nostrdb
-                    && indexReconciler.pendingEvents() > 0) {
-                int reindexed = nostrdb.reindex(index);
-                LOGGER.info("pending_index_reconciled reindexed={}", reindexed);
-            }
-        }
+    @Scheduled(fixedDelayString = "${trace.storage.reconcile-delay:PT30S}")
+    public void reconcile() {
+      if (rawEventStore instanceof NostrDbRawEventStore nostrdb
+          && indexReconciler.pendingEvents() > 0) {
+        int reindexed = nostrdb.reindex(index);
+        LOGGER.info("pending_index_reconciled reindexed={}", reindexed);
+      }
     }
+  }
 }

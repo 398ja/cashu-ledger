@@ -14,39 +14,45 @@ import xyz.tcheeric.cashu.ledger.trace.core.OperationKind;
  */
 public final class MicrometerTraceIngestMetrics implements TraceIngestMetricsRecorder {
 
-    private final MeterRegistry registry;
-    private final Timer ingestLag;
-    private final Counter duplicates;
-    private final Counter conflicts;
+  private final MeterRegistry registry;
+  private final Timer ingestLag;
+  private final Counter duplicates;
+  private final Counter conflicts;
 
-    public MicrometerTraceIngestMetrics(MeterRegistry registry) {
-        this.registry = registry;
-        this.ingestLag = Timer.builder("cashu_trace_ingest_lag")
-                .description("Time from event created_at to ingest").register(registry);
-        this.duplicates = Counter.builder("cashu_trace_ingest_duplicates_total")
-                .description("Duplicate trace events received").register(registry);
-        this.conflicts = Counter.builder("cashu_trace_ingest_conflicts_total")
-                .description("Operation-id conflicts detected").register(registry);
-    }
+  public MicrometerTraceIngestMetrics(MeterRegistry registry) {
+    this.registry = registry;
+    this.ingestLag =
+        Timer.builder("cashu_trace_ingest_lag")
+            .description("Time from event created_at to ingest")
+            .register(registry);
+    this.duplicates =
+        Counter.builder("cashu_trace_ingest_duplicates_total")
+            .description("Duplicate trace events received")
+            .register(registry);
+    this.conflicts =
+        Counter.builder("cashu_trace_ingest_conflicts_total")
+            .description("Operation-id conflicts detected")
+            .register(registry);
+  }
 
-    @Override
-    public void recordStored(OperationKind kind, long lagMillis) {
-        registry.counter("cashu_trace_ingested_total", "op", kind.wireValue()).increment();
-        ingestLag.record(lagMillis, TimeUnit.MILLISECONDS);
-    }
+  @Override
+  public void recordStored(OperationKind kind, long lagMillis) {
+    registry.counter("cashu_trace_ingested_total", "op", kind.wireValue()).increment();
+    ingestLag.record(lagMillis, TimeUnit.MILLISECONDS);
+  }
 
-    @Override
-    public void recordRejected(String reasonCode) {
-        registry.counter("cashu_trace_rejected_total", "reason", reasonCode).increment();
-    }
+  @Override
+  public void recordRejected(String reasonCode) {
+    registry.counter("cashu_trace_rejected_total", "reason", reasonCode).increment();
+  }
 
-    @Override
-    public void recordDuplicate() {
-        duplicates.increment();
-    }
+  @Override
+  public void recordDuplicate() {
+    duplicates.increment();
+  }
 
-    @Override
-    public void recordConflict() {
-        conflicts.increment();
-    }
+  @Override
+  public void recordConflict() {
+    conflicts.increment();
+  }
 }

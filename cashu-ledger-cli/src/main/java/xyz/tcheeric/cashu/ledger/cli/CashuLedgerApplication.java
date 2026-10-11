@@ -4,11 +4,10 @@ import picocli.CommandLine;
 
 public final class CashuLedgerApplication {
 
-    private CashuLedgerApplication() {
-    }
+  private CashuLedgerApplication() {}
 
-    public static void main(String[] args) {
-        int exitCode = new CommandLine(new CashuLedgerCommand()).execute(args);
-        System.exit(exitCode);
-    }
+  public static void main(String[] args) {
+    int exitCode = new CommandLine(new CashuLedgerCommand()).execute(args);
+    System.exit(exitCode);
+  }
 }
