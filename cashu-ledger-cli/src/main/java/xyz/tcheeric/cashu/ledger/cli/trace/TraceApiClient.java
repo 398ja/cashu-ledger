@@ -27,6 +27,9 @@ import xyz.tcheeric.cashu.ledger.trace.core.CanonicalJson;
  */
 public final class TraceApiClient {
 
+    /** CSPRNG for BIP-340 auxiliary randomness. */
+    private static final java.security.SecureRandom AUX_RAND = new java.security.SecureRandom();
+
     private static final HexFormat HEX = HexFormat.of();
     private static final int NIP98_KIND = 27235;
 
@@ -89,7 +92,14 @@ public final class TraceApiClient {
             long createdAt = Instant.now().getEpochSecond();
             List<List<String>> tags = List.of(List.of("u", url), List.of("method", method));
             String id = CanonicalJson.eventId(pub, createdAt, NIP98_KIND, tags, "");
-            byte[] sig = Schnorr.sign(HEX.parseHex(id), priv, new byte[32]);
+            // Real auxiliary randomness, not 32 zero bytes (audit M-26). BIP-340 treats aux_rand
+            // as hardening rather than the nonce source, so a fixed value does not by itself
+            // expose the key, but it discards the defence against fault and side-channel attacks
+            // that aux_rand exists to provide, and TraceEventSigner on the publisher side already
+            // does this correctly. There is no reason for the two to differ.
+            byte[] auxRand = new byte[32];
+            AUX_RAND.nextBytes(auxRand);
+            byte[] sig = Schnorr.sign(HEX.parseHex(id), priv, auxRand);
 
             ObjectNode event = mapper.createObjectNode();
             event.put("id", id);

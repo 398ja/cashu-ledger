@@ -3,6 +3,7 @@ package xyz.tcheeric.cashu.ledger.core.service;
 import lombok.extern.slf4j.Slf4j;
 import xyz.tcheeric.cashu.ledger.core.mapper.VoucherEventMapper;
 import xyz.tcheeric.cashu.ledger.core.model.VoucherNode;
+import xyz.tcheeric.cashu.ledger.core.trace.IssuerAttestationConfig;
 import xyz.tcheeric.cashu.ledger.core.model.VoucherTree;
 import xyz.tcheeric.cashu.ledger.core.model.TraversalDirection;
 import xyz.tcheeric.cashu.ledger.core.relay.RelayConnectionManager;
@@ -48,6 +49,13 @@ public class VoucherLedgerServiceImpl implements VoucherLedgerService {
     private static final Duration DEFAULT_CACHE_TTL = Duration.ofSeconds(30);
     private final Duration cacheTtl;
 
+    /**
+     * The issuer keys this ledger will attest to. Empty by default, in which case a signature is
+     * reported as untrusted rather than valid: with no registered key there is nothing to check
+     * it against, and answering "valid" to that question is how a forged voucher passed.
+     */
+    private final IssuerAttestationConfig issuerAttestation;
+
     public VoucherLedgerServiceImpl(
             RelayConnectionManager relayConnectionManager,
             List<String> relayUrls,
@@ -64,6 +72,24 @@ public class VoucherLedgerServiceImpl implements VoucherLedgerService {
             Duration queryTimeout,
             Duration cacheTtl
     ) {
+        this(relayConnectionManager, relayUrls, connectionTimeout, queryTimeout, cacheTtl,
+                IssuerAttestationConfig.empty());
+    }
+
+    /**
+     * @param issuerAttestation the issuer keys this ledger will attest to; pass a populated
+     *                          config to have {@code verify()} report signatures as trusted
+     */
+    public VoucherLedgerServiceImpl(
+            RelayConnectionManager relayConnectionManager,
+            List<String> relayUrls,
+            Duration connectionTimeout,
+            Duration queryTimeout,
+            Duration cacheTtl,
+            IssuerAttestationConfig issuerAttestation
+    ) {
+        this.issuerAttestation = issuerAttestation != null
+                ? issuerAttestation : IssuerAttestationConfig.empty();
         this.relayConnectionManager = Objects.requireNonNull(relayConnectionManager, "relayConnectionManager");
         this.mapper = new VoucherEventMapper();
         this.cacheTtl = cacheTtl != null ? cacheTtl : DEFAULT_CACHE_TTL;
@@ -313,6 +339,26 @@ public class VoucherLedgerServiceImpl implements VoucherLedgerService {
                 || node.eventMetadata().eventId() == null || node.issuerPublicKey() == null) {
             return false;
         }
+
+        // Bind the signing key to the claimed issuer before the signature means anything.
+        //
+        // Checking the signature against node.issuerPublicKey() alone asks only whether the
+        // event is internally consistent: the key comes from the event, so anyone who can write
+        // to a relay can supply a key they hold, claim any issuer id, and be pronounced valid.
+        // An unregistered issuer is reported unverified rather than valid; that is the honest
+        // answer when there is no key to check against.
+        if (!issuerAttestation.isAuthorised(node.issuerId(), node.issuerPublicKey())) {
+            if (issuerAttestation.isEmpty()) {
+                log.warn("signature_untrusted_no_issuer_registry voucher_id={} issuer_id={} "
+                        + "(configure IssuerAttestationConfig to attest issuer keys)",
+                        node.voucherId(), node.issuerId());
+            } else {
+                log.warn("signature_untrusted_unregistered_key voucher_id={} issuer_id={}",
+                        node.voucherId(), node.issuerId());
+            }
+            return false;
+        }
+
         try {
             byte[] message = hexToBytes(node.eventMetadata().eventId());
             Signature signature = Signature.fromString(node.eventMetadata().signatureHex());

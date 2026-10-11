@@ -1,0 +1,157 @@
+name: Dependency vulnerability scan
+
+# Audit finding L-34: no repository in the cashu ecosystem ran vulnerability scanning in CI.
+# Dependabot proposes upgrades, but nothing failed a build when a known-vulnerable dependency
+# was present, so a transitively-introduced CVE could land unnoticed. That is how the
+# react-router advisories in mint-admin-web went unobserved until a manual audit.
+#
+# Trivy is used rather than OWASP dependency-check because it needs no NVD API key, caches its
+# database, and understands both the Maven and npm trees in this repository.
+#
+# AppSec review finding L-4 (issue #9): the Maven half of this scan was detecting nothing.
+# `scan-type: fs`
+# parses pom.xml, and in a multi-module project using dependencyManagement the coordinate and its
+# version never appear in the same file -- the parent declares <version> inside
+# <dependencyManagement>, which is not a dependency, and the child declares the dependency with
+# no version. Per file Trivy sees either a managed version nothing depends on, or a dependency
+# with no version, and neither is matchable against an advisory. The scan was green while
+# Dependabot -- once enabled on this repository, which it had not been -- reported 6 alerts on
+# the same tree, including a runtime logback-core cluster.
+#
+# The fix is to scan something produced AFTER Maven resolves. CycloneDX emits an aggregate SBOM
+# carrying resolved coordinates, and Trivy reads it natively. Adding flags to the fs scan could
+# not have worked: no file in the tree holds the joined coordinate-plus-version fact.
+#
+# includeTestScope is deliberate. A test dependency runs in CI and on developer machines, and in
+# the sibling cashu-lib the one open high advisory was exactly that -- assertj-core, which the
+# default SBOM omits entirely. Leaving test scope out would reproduce the original bug on the
+# class of dependency most likely to carry it.
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master, develop]
+  schedule:
+    # Weekly, because a dependency does not have to change for it to become vulnerable: most
+    # findings arrive as new advisories against versions that were already pinned.
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+  # Required by upload-sarif. Without it the upload returns 403, and because that step is
+  # if: always() it ran and failed even when the scan itself passed, so the job was red
+  # unconditionally from the first push. A check that cannot go green is worse than no check.
+  security-events: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # Produces target/sbom.json: the aggregate, fully-resolved dependency set across every
+      # module, test scope included. This is what makes Maven scanning work at all.
+      - name: Generate CycloneDX SBOM
+        run: >-
+          ./mvnw -q -B -DskipTests
+          org.cyclonedx:cyclonedx-maven-plugin:2.9.1:makeAggregateBom
+          -DoutputName=sbom -DoutputFormat=json -DincludeTestScope=true
+
+      # Fail loudly if the SBOM is missing or implausibly small. Without this, a plugin change
+      # that silently stopped emitting components would return the job to exactly the state
+      # issue #9 describes: a green scan over an unresolved tree. The threshold sits well below
+      # the current count so ordinary dependency churn never trips it.
+      - name: Assert the SBOM actually resolved dependencies
+        run: |
+          set -euo pipefail
+          test -f target/sbom.json || { echo "::error::No SBOM produced"; exit 1; }
+          count=$(python3 -c "import json;print(len(json.load(open('target/sbom.json')).get('components',[])))")
+          echo "SBOM components: $count"
+          # An SBOM that exists but will not parse leaves count empty, and `[ "" -lt N ]` fails
+          # with "integer expression expected" rather than failing the step -- so without this the
+          # guard reports success over a file it could not read, which is the failure it exists to
+          # prevent. Caught by testing the guard against a corrupt SBOM rather than only a small one.
+          case "$count" in
+            ''|*[!0-9]*)
+              echo "::error::Could not read a component count from the SBOM."
+              exit 1
+              ;;
+          esac
+          if [ "$count" -lt 100 ]; then
+            echo "::error::SBOM has only $count components; dependency resolution likely failed."
+            echo "::error::Refusing to report a green scan over an unresolved tree (issue #9)."
+            exit 1
+          fi
+
+      - name: Scan for vulnerabilities
+        id: vulnerability_scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'sbom'
+          scan-ref: 'target/sbom.json'
+          # CRITICAL only blocks. A scan that only reports is a scan nobody reads, but a scan
+          # that is always red is also a scan nobody reads, and it blocks merges as well.
+          # CRITICAL+HIGH across a Spring Boot, Jackson and Netty tree produces findings most
+          # weeks, none of which need be related to the change under review, so blocking on HIGH
+          # would have trained everyone to ignore the check within about a month. HIGH findings
+          # still surface: the SARIF upload below reports them in the Security tab, and the
+          # weekly schedule means they arrive without needing a push.
+          severity: 'CRITICAL'
+          exit-code: '1'
+          ignore-unfixed: true
+          # Anything listed here is suppressed with a reason and a review date.
+          trivyignores: '.trivyignore'
+          format: 'table'
+
+      # Always produce SARIF so findings appear in the Security tab even when the step above
+      # failed the build.
+      - name: Generate SARIF report
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'sbom'
+          scan-ref: 'target/sbom.json'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload SARIF
+        # Not on pull requests from forks: security-events: write is not granted there whatever
+        # the workflow asks for, so the step can only fail. The push and schedule runs cover the
+        # same code.
+        #
+        # continue-on-error because this repository is PRIVATE and code scanning needs GitHub
+        # Advanced Security, so the upload returns "Resource not accessible by integration" and
+        # can never succeed here. Without it the scan job is permanently red on master while the
+        # scan itself passes -- a check that cannot go green, which is worse than no check.
+        #
+        # Scoped to the private case deliberately. The sibling cashu-vault added this same flag
+        # and then correctly REVERTED it (398ja/cashu-vault#139) once that repository went public:
+        # there the upload can succeed, so swallowing a failure would hide the Security tab
+        # quietly ceasing to update. Revert this hunk if this repository is ever made public.
+        continue-on-error: true
+        if: always() && github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      # The upload may fail; the scan may not. Keyed on the scan step's outcome rather than on the
+      # SARIF file, because the file is not written where the action's `output:` suggests.
+      - name: Confirm the scan itself succeeded
+        if: always()
+        run: |
+          echo "Blocking scan outcome: ${{ steps.vulnerability_scan.outcome }}"
+          if [ "${{ steps.vulnerability_scan.outcome }}" != "success" ]; then
+            echo "::error::The vulnerability scan did not succeed; the SARIF upload being"
+            echo "::error::optional must not mask that."
+            exit 1
+          fi

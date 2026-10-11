@@ -28,6 +28,10 @@ public class ReplayCommand implements Callable<Integer> {
     private Path logFile;
 
     @CommandLine.Option(names = "--key", required = true,
+            // See TraceCommand: a key on the command line is visible in `ps` and in shell
+            // history (audit M-27).
+            interactive = true, arity = "0..1",
+            defaultValue = "${env:CASHU_LEDGER_OPERATOR_KEY}",
             description = "Producer private key (hex) used to sign replayed events")
     private String producerKey;
 

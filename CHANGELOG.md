@@ -2,7 +2,138 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
-## [Unreleased]
+## [0.7.3] - 2026-09-22
+
+### Fixed
+
+- **`imani-bom` 0.1.97 -> 0.1.98.** 0.1.97 pinned `imani-wallet.version` to 0.3.2, a version
+  that was never published to Reposilite. Nothing noticed because the only module that pulls
+  `wallet-core-cashu` is a test harness, so the phantom pin stayed invisible until a release
+  tried to resolve it. 0.1.98 pins 0.3.3, which is published.
+
+- **Test-harness modules are no longer deployed.** `cashu-ledger-e2e-tests` and
+  `cashu-ledger-integration-tests` now set `maven.deploy.skip`. They have no consumers inside
+  or outside this repo, but deploying them meant their *test-scoped* dependencies had to
+  resolve during `mvn deploy` - so an unpublished test dependency could fail the release after
+  every real artifact had already been pushed.
+
+### Notes for operators
+
+- **0.7.2 is half-released and must not be used.** The 0.7.2 release pushed six of seven
+  modules to Reposilite before failing on `cashu-ledger-e2e-tests`. Reposilite releases are
+  immutable, so those artifacts cannot be withdrawn or overwritten; 0.7.3 supersedes them.
+  Anything pinned to 0.7.2 resolves a real but incompletely released version - move to 0.7.3.
+
+## [0.7.2] - 2026-09-22
+
+### Security
+
+- **BouncyCastle 1.84 -> 1.85 for CVE-2026-8763 (CRITICAL)**, via `imani-bom` 0.1.97.
+  X.509 Name Constraints can be bypassed with a trailing dot in an `rfc822Name` or URI, so a
+  certificate can assert a name the constraint exists to forbid. Verified with
+  `dependency:tree` rather than by reading the pom.
+
+### Changed
+
+- `imani-bom` 0.1.77 -> 0.1.97. A twenty-version jump, so this release carries whatever else
+  that range changed; the full suite passes on it.
+
+## [0.7.1] - 2026-09-15
+
+### Security
+
+- **`io.undertow:undertow-core` overridden to 2.3.21.Final** to clear CVE-2025-12543
+  (CRITICAL). It arrives test-scoped and transitively via `testcontainers` 1.21.4, which pins
+  the affected 2.3.18.Final, and nothing here declares undertow directly, so a
+  `dependencyManagement` override is the only lever this repository has. Test scope, so it is
+  not shipped and not reachable by a deployed ledger -- but it runs in CI and on developer
+  machines. Remove the override once Testcontainers ships a release pulling a fixed undertow.
+
+  Found because the dependency scan ran on `master` for the first time: the workflow had been
+  keyed to a `main` branch that does not exist in this repository.
+
+### Fixed
+
+- **Workflow triggers point at `master`.** `dependency-scan`, `enforce_conventional_commits`,
+  `google-java-format` and `qodana` all triggered on `main`, which this repository has never
+  had, so none of them ran on a push to the default branch. The vulnerability scan's only runs
+  came from its weekly schedule.
+- **The SBOM guard no longer depends on the runner's default shell flags**, and the SARIF upload
+  is allowed to fail on this private repository without failing the scan job, while the scan's
+  own outcome is still asserted.
+
+## [0.7.0] - 2026-09-14
+
+Two findings from the 2026-09-13 AppSec review of the estate.
+
+**Minor, not patch: the filter chain now states its authorization boundary**, and denies anything
+nobody has classified. A route added under an unclassified prefix is now refused rather than
+silently public.
+
+### Security
+
+- **The authorization boundary was not written where authorization is configured.** The chain
+  said `anyRequest().permitAll()`, with every access decision made inside a handler. This was
+  never an open door — `Nip98AuthenticationFilter` rejects unauthenticated requests to
+  `/api/v1/trace` before a controller sees them, and both handlers fail closed — which is why the
+  finding was downgraded to Low once measured.
+
+  What was missing is that the boundary lived in a filter's path prefix and in per-handler
+  throws, so an admin route added under a different prefix, or the prefix being renamed, would be
+  unauthenticated with nothing failing to compile or to test. The chain now states it:
+  `trace:admin` for the admin surface, `authenticated` for the rest of the trace prefix, explicit
+  `permitAll` for the public voucher reads and the login page, and **deny for anything nobody has
+  classified**.
+
+  That last rule required a real change. `Nip98AuthenticationFilter` published its principal only
+  as a request attribute, never to Spring's `SecurityContext`, so `.authenticated()` would have
+  rejected even a validly signed request. It now sets an `Authentication` with authorities named
+  after `TraceAuthority`, which is what lets the chain express the rule at all.
+
+- **Dependabot alerts were disabled.** Enabling them surfaced 6, including a runtime
+  `logback-core` cluster. `logback.version` 1.5.18 -> 1.5.34 clears all four of those. The
+  CRITICAL is a false positive: CVE-2026-33634 needs `trivy-action` < 0.35.0.
+
+## [0.6.0] - 2026-09-06
+
+Security remediation from the 2026-09-05 audit, plus the defects an adversarial review of that
+remediation found. Minor rather than patch: `verify` now fails until issuer keys are configured,
+and operational endpoints require authentication.
+
+### Security
+
+- **A registered issuer key is required before a signature is called valid** (audit H-12).
+
+- **NIP-98 auth events are single-use, and operational endpoints are gated** (audit M-25, L-28).
+  `/actuator/prometheus`, `/v3/api-docs` and `/swagger-ui` were reachable unauthenticated.
+
+- **The operational endpoint filter matches the context-relative path.** It compared
+  `getRequestURI()`, which includes the context path, so under any non-root
+  `server.servlet.context-path` every prefix missed and the filter permitted everything while
+  remaining registered and appearing to work.
+
+- **The nsec field is cleared on failed login and store permissions are restricted** (audit L-25,
+  L-29).
+
+### Fixed
+
+- **The issuer key registry is configurable.** `IssuerAttestationConfig` was constructed as
+  `empty()` at all nine CLI call sites and the sole web bean, with no property, option or binding
+  anywhere, so every `verify` invocation exited non-zero with no supported remedy: not fail-closed
+  but fail-always, and a silent break for any CI job gating on that exit code. Adds
+  `--issuer-key <id>=<hex>` and `ledger.web.issuer-keys.<id>`, with a startup warning when empty.
+
+- **A 2.4%-per-run flake in the session envelope test.** It asserted that the two-character
+  password `pw` did not appear in roughly a hundred positions of random base64.
+
+### Changed
+
+- **`cashu-voucher` 0.10.0 -> 0.14.0, `cashu-lib-crypto` 0.21.0 -> 0.30.0, `cashu-wallet-client`
+  0.6.4 -> 0.8.0** (audit L-36). The ledger held three separate stale pins, and the effect was
+  worse than being behind: `cashu-lib-common` and `-entities` resolved to 0.30.0 through the
+  voucher while `-crypto` stayed at 0.21.0, so the modules carrying the constant-time scalar
+  multiplication and the on-curve key check were nine minor versions older than the ones calling
+  them. All three now resolve 0.30.0.
 
 ## [0.5.0] - 2026-08-31
 

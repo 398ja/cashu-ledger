@@ -29,7 +29,16 @@ public class TraceCommand implements Runnable {
 
     @CommandLine.Option(
             names = "--key",
-            description = "Operator private key (hex) for NIP-98 authentication")
+            // A value passed on the command line is visible in `ps`, in the shell history file
+            // and in any process listing the host ships to a log aggregator (audit M-27).
+            // interactive=true makes picocli prompt on the terminal instead, and the environment
+            // variable covers the scripted case; neither puts the key in the process table.
+            interactive = true,
+            arity = "0..1",
+            defaultValue = "${env:CASHU_LEDGER_OPERATOR_KEY}",
+            description = "Operator private key (hex) for NIP-98 authentication. Prompted for "
+                    + "when omitted; may also be supplied via CASHU_LEDGER_OPERATOR_KEY. Avoid "
+                    + "passing it inline: command-line arguments are world-readable in `ps`.")
     private String operatorKey;
 
     @CommandLine.Option(

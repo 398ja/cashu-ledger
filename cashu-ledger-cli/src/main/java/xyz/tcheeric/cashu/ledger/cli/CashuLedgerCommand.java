@@ -20,7 +20,10 @@ import xyz.tcheeric.cashu.ledger.core.storage.NostrDbEventStore;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import xyz.tcheeric.cashu.ledger.core.trace.IssuerAttestationConfig;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 
 @CommandLine.Command(
@@ -48,6 +51,15 @@ public class CashuLedgerCommand implements Runnable {
             split = ","
     )
     private List<String> relayUrls = new ArrayList<>();
+
+    @CommandLine.Option(
+            names = {"--issuer-key"},
+            description = "Trusted issuer key as <issuerId>=<hex pubkey> (repeatable). "
+                    + "Without at least one, verify reports signatureValid=false for every "
+                    + "voucher, because no key is trusted, and exits non-zero.",
+            split = ","
+    )
+    private Map<String, String> issuerKeys = new LinkedHashMap<>();
 
     @CommandLine.Option(
             names = {"-t", "--timeout"},
@@ -88,6 +100,17 @@ public class CashuLedgerCommand implements Runnable {
             return List.of("wss://relay.imani.casa");
         }
         return relayUrls;
+    }
+
+    /**
+     * The issuer keys verification will attest to.
+     *
+     * <p>Empty means nothing is trusted, so {@code verify} reports every signature untrusted and
+     * exits non-zero. That default is fail-closed on purpose, but it is only defensible because
+     * {@code --issuer-key} exists to change it.
+     */
+    public IssuerAttestationConfig issuerAttestation() {
+        return new IssuerAttestationConfig(issuerKeys == null ? Map.of() : issuerKeys);
     }
 
     public int timeoutSeconds() {

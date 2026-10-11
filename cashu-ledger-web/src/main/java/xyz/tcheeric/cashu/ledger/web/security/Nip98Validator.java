@@ -26,6 +26,16 @@ public final class Nip98Validator {
     private static final String SCHEME = "nostr ";
     private static final HexFormat HEX = HexFormat.of();
 
+    /**
+     * Upper bound on tracked event ids, so a flood cannot exhaust memory. At the default skew
+     * window this is far more than any legitimate client produces.
+     */
+    private static final int MAX_TRACKED_EVENT_IDS = 100_000;
+
+    /** Event id to the second after which it can no longer be inside the skew window. */
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> seenEventIds =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     private final ObjectMapper mapper = new ObjectMapper();
     private final long allowedSkewSeconds;
     private final LongSupplier nowMillis;
@@ -74,7 +84,44 @@ public final class Nip98Validator {
         String content = event.path("content").asText("");
         String computedId = CanonicalJson.eventId(pubkey, createdAt, NIP98_KIND, tags, content);
         verifySignature(computedId, pubkey, event.get("sig").asText());
+
+        // Single use. The signature proves the event was authored by the key; it says nothing
+        // about how many times it has been presented, so anyone who observed one Authorization
+        // header could resend it until the skew window closed (audit M-25). Recording the id
+        // after the signature check keeps the cache from being filled with unauthenticated junk.
+        requireUnusedEventId(computedId, createdAt);
         return pubkey;
+    }
+
+    /**
+     * Refuses an event id that has already been presented.
+     *
+     * <p>Entries are kept for as long as an event could still be inside the skew window; once it
+     * is outside, the timestamp check rejects it anyway and the entry is redundant. That bounds
+     * the map by the request rate within the window rather than by total traffic, and the sweep
+     * runs on insert so there is no background thread to own.
+     *
+     * <p>In-process, so a horizontally scaled deployment gets per-instance protection rather
+     * than global. Narrowing the skew window is what limits the damage there; a shared cache
+     * would need Redis or the database, which is a larger change than this finding warrants.
+     */
+    private void requireUnusedEventId(String eventId, long createdAt) {
+        long nowSeconds = nowMillis.getAsLong() / 1000L;
+        long expiresAt = createdAt + allowedSkewSeconds;
+
+        if (seenEventIds.size() > MAX_TRACKED_EVENT_IDS) {
+            seenEventIds.values().removeIf(expiry -> expiry < nowSeconds);
+        }
+        if (seenEventIds.size() > MAX_TRACKED_EVENT_IDS) {
+            // Still oversized after sweeping: every entry is live, so this is either a burst or
+            // an attempt to exhaust memory. Refusing is the safe direction, and the caller can
+            // retry with a fresh event.
+            throw new Nip98Exception("auth replay cache is full; retry shortly");
+        }
+        Long previous = seenEventIds.putIfAbsent(eventId, expiresAt);
+        if (previous != null) {
+            throw new Nip98Exception("auth event has already been used");
+        }
     }
 
     private JsonNode decode(String token) {
