@@ -1,5 +1,6 @@
 package xyz.tcheeric.cashu.ledger.core.trace;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
@@ -123,6 +124,7 @@ public final class TraceIngestService {
         event.kind().wireValue(),
         event.mintUrl(),
         lagMillis);
+    detectDoubleSpend(event, eventId);
     notifyListener(toStore);
     return IngestOutcome.stored(eventId);
   }
@@ -145,6 +147,28 @@ public final class TraceIngestService {
                   "operation " + event.operationId() + " already stored with different content")));
     }
     return Optional.empty();
+  }
+
+  /**
+   * Raises the double-spend alert when an input of the stored event is already an input of another
+   * stored event (cashu-ledger#17): the same {@code (mint, keyset, Y)} spent twice.
+   */
+  private void detectDoubleSpend(TransactionEvent event, String eventId) {
+    for (var input : event.inputs()) {
+      List<StoredEvent> spenders =
+          store.findByInputProofRef(event.mintUrl(), input.keysetId(), input.y(), 2);
+      boolean other =
+          spenders.stream().anyMatch(s -> !s.event().eventId().orElse("").equals(eventId));
+      if (other) {
+        metricsRecorder.recordDoubleSpend();
+        LOGGER.error(
+            "trace_double_spend mint_url={} keyset_id={} y={} event_id={}",
+            event.mintUrl(),
+            input.keysetId(),
+            input.y(),
+            eventId);
+      }
+    }
   }
 
   private void notifyListener(StoredEvent event) {
