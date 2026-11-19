@@ -256,6 +256,47 @@ class TraceIngestServiceTest {
     assertThat(service.metrics().rejected()).isEqualTo(1);
   }
 
+  /** Tests that an input Y spent by two different events raises the double-spend alert (#17). */
+  @Test
+  void shouldAlertWhenSameInputSpentTwice() throws Exception {
+    // Given: a recording metrics sink and one swap that spends proof a1
+    java.util.concurrent.atomic.AtomicInteger doubleSpends =
+        new java.util.concurrent.atomic.AtomicInteger();
+    TraceIngestMetricsRecorder recorder =
+        new TraceIngestMetricsRecorder() {
+          @Override
+          public void recordDoubleSpend() {
+            doubleSpends.incrementAndGet();
+          }
+        };
+    TraceIngestService alerting =
+        new TraceIngestService(
+            new TraceEventMapper(),
+            new TraceIngestValidator(
+                new ProducerAttestationConfig(Map.of(MINT, Set.of(PUB))),
+                1,
+                60,
+                86400,
+                () -> NOW_MS),
+            store,
+            false,
+            e -> {},
+            recorder);
+    alerting.ingest(
+        signedJson(swap("op-1", List.of(proof(64, "a1")), List.of(proof(64, "c3")))), "wss://r");
+    assertThat(doubleSpends).hasValue(0);
+
+    // When: a second, different operation spends the same input
+    IngestOutcome second =
+        alerting.ingest(
+            signedJson(swap("op-2", List.of(proof(64, "a1")), List.of(proof(64, "d4")))),
+            "wss://r");
+
+    // Then: it is stored (the ledger records evidence) and the alert metric fires
+    assertThat(second.status()).isEqualTo(IngestOutcome.Status.STORED);
+    assertThat(doubleSpends).hasValue(1);
+  }
+
   /** Tests that a second event reusing an operation id with different content conflicts. */
   @Test
   void shouldDetectOperationConflict() throws Exception {

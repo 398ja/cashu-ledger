@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. This project follows Conventional Commits and semantic versioning.
 
+## [Unreleased]
+
+### Security
+
+- `VoucherStateWatcher` now verifies every kind-30078 voucher-status event before recording it (#17). The id is recomputed from the NIP-01 serialisation, the BIP-340 signature is checked, and the event's own `pubkey` must be the voucher issuer's key (`ledger.web.issuer-keys`) or a configured gateway signer (`trace.ingest.voucher-status-signers`). The self-asserted `issuer_pubkey` tag is no longer trusted. A `state_version` jump of more than 1000 is refused, so one event can no longer pin a voucher's state. Refused events never reach the activity cache, so retention cannot prune a voucher's trace on a forged terminal status. Rejections are counted in `cashu_voucher_status_rejected_total{reason}` and logged as `voucher_status_rejected`.
+- Conflicting verified terminal statuses for one voucher raise `cashu_voucher_terminal_conflicts_total` and a `voucher_terminal_conflict` error log. A proof `(mint, keyset, Y)` spent as an input by two events raises `cashu_trace_double_spend_total` and a `trace_double_spend` error log.
+
+### Notes for operators
+
+- With no issuer keys and no `trace.ingest.voucher-status-signers`, every voucher-status event is now dropped (logged once at startup as `voucher_watch_no_trust_anchor`). Configure the gateway's status-signing pubkey before upgrading.
+
 ## [0.7.3] - 2026-09-22
 
 ### Fixed

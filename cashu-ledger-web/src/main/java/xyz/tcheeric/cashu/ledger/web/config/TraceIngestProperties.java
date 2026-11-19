@@ -24,6 +24,13 @@ public class TraceIngestProperties {
   /** Authorised producers per mint; events signed by other keys are rejected. */
   private List<Producer> producers = new ArrayList<>();
 
+  /**
+   * Gateway pubkeys (hex) allowed to publish kind-30078 voucher-status events for any voucher, in
+   * addition to each issuer's own key from {@code ledger.web.issuer-keys} (cashu-ledger#17).
+   * Status events from any other signer are dropped.
+   */
+  private List<String> voucherStatusSigners = new ArrayList<>();
+
   /** A mint and the producer pubkeys authorised to publish trace events for it. */
   @Data
   public static class Producer {

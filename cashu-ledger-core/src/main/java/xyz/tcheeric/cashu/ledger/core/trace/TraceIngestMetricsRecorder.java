@@ -22,4 +22,7 @@ public interface TraceIngestMetricsRecorder {
 
   /** An operation-id conflict was detected. */
   default void recordConflict() {}
+
+  /** A proof tuple was seen as an input of two different events (possible double spend). */
+  default void recordDoubleSpend() {}
 }

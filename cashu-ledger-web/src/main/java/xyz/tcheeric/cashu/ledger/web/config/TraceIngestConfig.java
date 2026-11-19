@@ -14,6 +14,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import xyz.tcheeric.cashu.ledger.core.trace.ActivityCache;
+import xyz.tcheeric.cashu.ledger.core.trace.IssuerAttestationConfig;
 import xyz.tcheeric.cashu.ledger.core.trace.ProducerAttestationConfig;
 import xyz.tcheeric.cashu.ledger.core.trace.QuoteStatusService;
 import xyz.tcheeric.cashu.ledger.core.trace.SqliteSidecarIndex;
@@ -25,9 +26,11 @@ import xyz.tcheeric.cashu.ledger.core.trace.TraceIngestService;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceIngestValidator;
 import xyz.tcheeric.cashu.ledger.core.trace.TraceSyncEngine;
 import xyz.tcheeric.cashu.ledger.core.trace.VoucherStateWatcher;
+import xyz.tcheeric.cashu.ledger.core.trace.VoucherStatusAuthority;
 import xyz.tcheeric.cashu.ledger.trace.core.TraceEventStore;
 import xyz.tcheeric.cashu.ledger.trace.core.TransactionEvent;
 import xyz.tcheeric.cashu.ledger.web.trace.MicrometerTraceIngestMetrics;
+import xyz.tcheeric.cashu.ledger.web.trace.MicrometerVoucherStatusMetrics;
 import xyz.tcheeric.cashu.ledger.web.trace.TraceStreamBroadcaster;
 
 /**
@@ -95,8 +98,17 @@ public class TraceIngestConfig {
 
   @Bean(destroyMethod = "close")
   public VoucherStateWatcher voucherStateWatcher(
-      SqliteSidecarIndex index, ActivityCache activityCache) {
-    return new VoucherStateWatcher(index, activityCache);
+      SqliteSidecarIndex index,
+      ActivityCache activityCache,
+      TraceIngestProperties properties,
+      WebLedgerProperties ledgerProperties,
+      MeterRegistry registry) {
+    VoucherStatusAuthority authority =
+        new VoucherStatusAuthority(
+            new IssuerAttestationConfig(ledgerProperties.getIssuerKeys()),
+            new LinkedHashSet<>(properties.getVoucherStatusSigners()));
+    return new VoucherStateWatcher(
+        index, activityCache, authority, new MicrometerVoucherStatusMetrics(registry));
   }
 
   @Bean

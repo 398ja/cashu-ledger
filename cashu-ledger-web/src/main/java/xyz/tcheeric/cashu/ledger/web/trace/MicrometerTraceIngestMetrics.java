@@ -55,4 +55,9 @@ public final class MicrometerTraceIngestMetrics implements TraceIngestMetricsRec
   public void recordConflict() {
     conflicts.increment();
   }
+
+  @Override
+  public void recordDoubleSpend() {
+    registry.counter("cashu_trace_double_spend_total").increment();
+  }
 }
