@@ -199,6 +199,9 @@ public final class VoucherStateWatcher implements AutoCloseable {
     } catch (Exception e) {
       return Optional.of("INVALID_SIGNATURE");
     }
+    if (authority.isEmpty()) {
+      return Optional.of("NO_TRUST_ANCHOR");
+    }
     if (!authority.isAuthorised(tagValue(event, "issuer_id"), pubkey)) {
       return Optional.of("UNAUTHORISED_AUTHOR");
     }
@@ -215,6 +218,21 @@ public final class VoucherStateWatcher implements AutoCloseable {
     }
     if (existing.isEmpty() && obs.stateVersion() > maxVersionJump) {
       reject("VERSION_JUMP", event, relayUrl);
+      return;
+    }
+    if (existing.isPresent()
+        && existing.get().issuerId().isPresent()
+        && !existing.get().issuerId().equals(obs.issuerId())) {
+      // An issuer key may only speak for its own vouchers, once the voucher's issuer is known.
+      reject("ISSUER_MISMATCH", event, relayUrl);
+      return;
+    }
+    if (existing.isPresent()
+        && existing.get().terminal()
+        && !obs.terminal()
+        && obs.stateVersion() > existing.get().stateVersion()) {
+      // Terminal is sticky: a later non-terminal revision must not re-open a voucher.
+      reject("TERMINAL_ROLLBACK", event, relayUrl);
       return;
     }
     existing

@@ -253,6 +253,48 @@ class VoucherStateWatcherTest {
     assertThat(metrics.terminalConflicts).isZero();
   }
 
+  /** A later non-terminal revision from an authorised signer cannot re-open a terminal voucher. */
+  @Test
+  void shouldNotRollTerminalStatusBack() {
+    watcher.handleMessage(signed(ISSUER_PRIV, "v1", "redeemed", 2, 1_700_000_000L), RELAY);
+
+    watcher.handleMessage(signed(GATEWAY_PRIV, "v1", "claimed", 3, 1_700_000_100L), RELAY);
+
+    assertThat(index.loadVoucherStatus("v1").orElseThrow().status()).isEqualTo("redeemed");
+    assertThat(metrics.rejected).containsExactly("TERMINAL_ROLLBACK");
+  }
+
+  /** Another registered issuer cannot take over a voucher already bound to a different issuer. */
+  @Test
+  void shouldRefuseStatusFromAnotherIssuerForBoundVoucher() {
+    String otherPriv = "0000000000000000000000000000000000000000000000000000000000000009";
+    VoucherStatusAuthority authority =
+        new VoucherStatusAuthority(
+            new IssuerAttestationConfig(Map.of(ISSUER, ISSUER_PUB, "iss-2", pub(otherPriv))),
+            Set.of());
+    watcher = new VoucherStateWatcher(index, terminalEvents::add, authority, metrics);
+    watcher.handleMessage(signed(ISSUER_PRIV, "v1", "claimed", 1, 1_700_000_000L), RELAY);
+
+    watcher.handleMessage(
+        signed(otherPriv, "v1", "redeemed", 2, 1_700_000_100L, "iss-2", null, null), RELAY);
+
+    assertThat(index.loadVoucherStatus("v1").orElseThrow().status()).isEqualTo("claimed");
+    assertThat(terminalEvents).isEmpty();
+    assertThat(metrics.rejected).containsExactly("ISSUER_MISMATCH");
+  }
+
+  /** With no trust anchor every event is dropped under its own, alertable reason. */
+  @Test
+  void shouldCountDropsWhenNoTrustAnchorConfigured() {
+    watcher =
+        new VoucherStateWatcher(index, terminalEvents::add, VoucherStatusAuthority.none(), metrics);
+
+    watcher.handleMessage(signed(ISSUER_PRIV, "v1", "redeemed", 1, 1_700_000_000L), RELAY);
+
+    assertThat(index.loadVoucherStatus("v1")).isEmpty();
+    assertThat(metrics.rejected).containsExactly("NO_TRUST_ANCHOR");
+  }
+
   /** Retention does not prune a voucher whose only terminal signal was refused. */
   @Test
   void shouldNotPruneVoucherWhoseOnlyTerminalSignalWasRejected() {
