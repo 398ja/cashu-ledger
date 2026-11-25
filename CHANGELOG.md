@@ -4,6 +4,10 @@ All notable changes to this project are documented here. This project follows Co
 
 ## [Unreleased]
 
+### Changed
+
+- Bump nostr-java from 2.0.7 to 2.4.4 (version property only; imani-bom unchanged).
+
 ## [0.8.0] - 2026-11-19
 
 **Signed voucher-status events (#17).** Minor rather than patch because the ingest contract
