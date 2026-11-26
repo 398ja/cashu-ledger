@@ -27,7 +27,7 @@
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <nostr-java.version>2.0.7</nostr-java.version>
+        <nostr-java.version>2.4.4</nostr-java.version>
         <nostrdb-jni.version>0.3.0</nostrdb-jni.version>
         <imani-bom.version>0.1.98</imani-bom.version>
         <picocli.version>4.7.6</picocli.version>
